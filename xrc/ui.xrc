@@ -1,10 +1,280 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <resource xmlns="http://www.wxwidgets.org/wxxrc" version="2.5.3.0">
   <object class="wxFrame" name="MainFrame">
-    <size>700,600</size>
+    <size>980,680</size>
+    <style>wxDEFAULT_FRAME_STYLE|wxTAB_TRAVERSAL</style>
+    <title>mu2vid</title>
+    <centered>1</centered>
+    <aui_managed>0</aui_managed>
+    <object class="wxStatusBar" name="MainStatus">
+      <style>wxSTB_SIZEGRIP</style>
+      <fields>2</fields>
+    </object>
+    <object class="wxMenuBar" name="MainMenu">
+      <object class="wxMenu" name="MainMenu_File">
+        <label>File</label>
+        <object class="wxMenuItem" name="MenuFileNewProject">
+          <label>New Project</label>
+          <accel>Ctrl+N</accel>
+          <help></help>
+        </object>
+        <object class="wxMenuItem" name="MenuFileOpen">
+          <label>Open</label>
+          <accel>Ctrl+O</accel>
+          <help></help>
+        </object>
+        <object class="wxMenuItem" name="MenuFileSave">
+          <label>Save</label>
+          <accel>Ctrl+S</accel>
+          <help></help>
+        </object>
+        <object class="wxMenuItem" name="MenuFileSaveAs">
+          <label>Save as</label>
+          <accel>Ctrl+Alt+S</accel>
+          <help></help>
+        </object>
+        <object class="separator"/>
+        <object class="wxMenuItem" name="MenuFileExit">
+          <label>Exit</label>
+          <accel></accel>
+          <help></help>
+        </object>
+      </object>
+      <object class="wxMenu" name="MainMenu_Help">
+        <label>Help</label>
+        <object class="wxMenuItem" name="MenuHelpAbout">
+          <label>About mu2vid</label>
+          <accel></accel>
+          <help></help>
+        </object>
+      </object>
+    </object>
+    <object class="wxBoxSizer" name="MainSizer">
+      <orient>wxVERTICAL</orient>
+      <object class="sizeritem">
+        <flag>wxEXPAND|wxALL</flag>
+        <border>8</border>
+        <option>1</option>
+        <object class="wxSplitterWindow" name="MainSplitter">
+          <style>wxSP_3D|wxSP_LIVE_UPDATE</style>
+          <sashpos>560</sashpos>
+          <gravity>0.55000000000000004</gravity>
+          <minsize>1</minsize>
+          <orientation>vertical</orientation>
+          <object class="wxPanel" name="QueuePanel">
+            <style>wxTAB_TRAVERSAL</style>
+            <object class="wxBoxSizer" name="QueuePanelSizer">
+              <orient>wxVERTICAL</orient>
+              <object class="sizeritem">
+                <flag>wxEXPAND|wxALL</flag>
+                <border>8</border>
+                <option>1</option>
+                <object class="wxScrolledWindow" name="QueueListPanel">
+                  <style>wxVSCROLL|wxTAB_TRAVERSAL</style>
+                  <scrollrate>5,5</scrollrate>
+                  <object class="wxBoxSizer" name="QueueListSizer">
+                    <orient>wxVERTICAL</orient>
+                    <object class="sizeritem">
+                      <flag>wxEXPAND|wxALL</flag>
+                      <border>4</border>
+                      <option>0</option>
+                      <object class="wxPanel" name="QueueItemPlaceholder">
+                        <style>wxBORDER_SIMPLE|wxTAB_TRAVERSAL</style>
+                        <object class="wxBoxSizer" name="QueueItemSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="sizeritem">
+                            <flag>wxEXPAND|wxALL</flag>
+                            <border>6</border>
+                            <option>0</option>
+                            <object class="wxPanel" name="QueueItemCoverPlaceholder">
+                              <style>wxBORDER_SIMPLE|wxTAB_TRAVERSAL</style>
+                              <object class="wxBoxSizer" name="QueueItemCoverSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <flag>wxALIGN_CENTER|wxALL</flag>
+                                  <border>0</border>
+                                  <option>1</option>
+                                  <object class="wxStaticText" name="QueueItemCoverText">
+                                    <style>wxALIGN_CENTER</style>
+                                    <label>Cover Placeholder</label>
+                                    <wrap>90</wrap>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                          <object class="sizeritem">
+                            <flag>wxEXPAND|wxTOP|wxBOTTOM</flag>
+                            <border>6</border>
+                            <option>1</option>
+                            <object class="wxBoxSizer" name="QueueItemInfoSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <option>0</option>
+                                <object class="wxStaticText" name="QueueItemTitleText">
+                                  <label>Queue item title</label>
+                                  <wrap>-1</wrap>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <flag>wxEXPAND|wxTOP</flag>
+                                <border>0</border>
+                                <option>0</option>
+                                <object class="wxStaticText" name="QueueItemStatusText">
+                                  <label>Status: waiting</label>
+                                  <wrap>-1</wrap>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <flag>wxEXPAND|wxTOP</flag>
+                                <border>0</border>
+                                <option>0</option>
+                                <object class="wxGauge" name="QueueItemProgressGauge">
+                                  <style>wxGA_HORIZONTAL</style>
+                                  <range>100</range>
+                                  <value>0</value>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                          <object class="sizeritem">
+                            <flag>wxEXPAND|wxALL</flag>
+                            <border>6</border>
+                            <option>0</option>
+                            <object class="wxBoxSizer" name="QueueItemActionsSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <flag>wxEXPAND|wxBOTTOM</flag>
+                                <border>2</border>
+                                <option>0</option>
+                                <object class="wxButton" name="QueueItemUpButton">
+                                  <size>64,-1</size>
+                                  <label>Up</label>
+                                  <default>0</default>
+                                  <auth_needed>0</auth_needed>
+                                  <markup>0</markup>
+                                  <bitmap/>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <flag>wxEXPAND|wxBOTTOM</flag>
+                                <border>2</border>
+                                <option>0</option>
+                                <object class="wxButton" name="QueueItemDownButton">
+                                  <size>64,-1</size>
+                                  <label>Down</label>
+                                  <default>0</default>
+                                  <auth_needed>0</auth_needed>
+                                  <markup>0</markup>
+                                  <bitmap/>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <option>0</option>
+                                <object class="wxButton" name="QueueItemDeleteButton">
+                                  <size>64,-1</size>
+                                  <label>Delete</label>
+                                  <default>0</default>
+                                  <auth_needed>0</auth_needed>
+                                  <markup>0</markup>
+                                  <bitmap/>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
+          <object class="wxPanel" name="PreviewPanel">
+            <style>wxTAB_TRAVERSAL</style>
+            <object class="wxBoxSizer" name="PreviewPanelSizer">
+              <orient>wxVERTICAL</orient>
+              <object class="spacer">
+                <flag>wxEXPAND</flag>
+                <border>0</border>
+                <option>1</option>
+                <size>0,0</size>
+              </object>
+              <object class="sizeritem">
+                <flag>wxALIGN_CENTER|wxALL</flag>
+                <border>12</border>
+                <option>0</option>
+                <object class="wxStaticText" name="PreviewEmptyText">
+                  <style>wxALIGN_CENTER</style>
+                  <label>Check back later :3</label>
+                  <wrap>-1</wrap>
+                </object>
+              </object>
+              <object class="spacer">
+                <flag>wxEXPAND</flag>
+                <border>0</border>
+                <option>1</option>
+                <size>0,0</size>
+              </object>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <flag>wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM</flag>
+        <border>8</border>
+        <option>0</option>
+        <object class="wxBoxSizer" name="BottomControlsSizer">
+          <orient>wxHORIZONTAL</orient>
+          <object class="sizeritem">
+            <flag>wxRIGHT</flag>
+            <border>4</border>
+            <option>0</option>
+            <object class="wxButton" name="AddQueueButton">
+              <label>Add new queue</label>
+              <default>0</default>
+              <auth_needed>0</auth_needed>
+              <markup>0</markup>
+              <bitmap/>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <flag>wxRIGHT</flag>
+            <border>4</border>
+            <option>0</option>
+            <object class="wxButton" name="StartButton">
+              <label>Start</label>
+              <default>0</default>
+              <auth_needed>0</auth_needed>
+              <markup>0</markup>
+              <bitmap/>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <flag></flag>
+            <border>0</border>
+            <option>0</option>
+            <object class="wxButton" name="StopButton">
+              <label>Stop</label>
+              <default>0</default>
+              <auth_needed>0</auth_needed>
+              <markup>0</markup>
+              <bitmap/>
+            </object>
+          </object>
+        </object>
+      </object>
+    </object>
+  </object>
+  <object class="wxFrame" name="FrameAbout">
+    <size>409,371</size>
     <style>wxDEFAULT_FRAME_STYLE|wxTAB_TRAVERSAL</style>
     <title></title>
     <centered>1</centered>
-    <aui_managed>1</aui_managed>
+    <aui_managed>0</aui_managed>
   </object>
 </resource>
