@@ -3,6 +3,8 @@
   <object class="wxFrame" name="MainFrame">
     <size>980,680</size>
     <style>wxDEFAULT_FRAME_STYLE|wxTAB_TRAVERSAL</style>
+    <fg>#ffffff</fg>
+    <bg>#f0f0f0</bg>
     <title>mu2vid</title>
     <centered>1</centered>
     <aui_managed>0</aui_managed>
@@ -87,19 +89,10 @@
                             <border>6</border>
                             <option>0</option>
                             <object class="wxPanel" name="QueueItemCoverPlaceholder">
+                              <size>96,96</size>
                               <style>wxBORDER_SIMPLE|wxTAB_TRAVERSAL</style>
                               <object class="wxBoxSizer" name="QueueItemCoverSizer">
                                 <orient>wxVERTICAL</orient>
-                                <object class="sizeritem">
-                                  <flag>wxALIGN_CENTER|wxALL</flag>
-                                  <border>0</border>
-                                  <option>1</option>
-                                  <object class="wxStaticText" name="QueueItemCoverText">
-                                    <style>wxALIGN_CENTER</style>
-                                    <label>Cover Placeholder</label>
-                                    <wrap>90</wrap>
-                                  </object>
-                                </object>
                               </object>
                             </object>
                           </object>
@@ -272,8 +265,8 @@
   </object>
   <object class="wxFrame" name="FrameAbout">
     <size>409,371</size>
-    <style>wxDEFAULT_FRAME_STYLE|wxTAB_TRAVERSAL</style>
-    <title></title>
+    <style>wxCAPTION|wxSYSTEM_MENU|wxCLOSE_BOX|wxFRAME_FLOAT_ON_PARENT|wxTAB_TRAVERSAL</style>
+    <title>About mu2vid</title>
     <centered>1</centered>
     <aui_managed>0</aui_managed>
   </object>
