@@ -4,7 +4,7 @@ use crate::{config, deps::ffmpeg};
 use wxdragon::appearance::{
     AppAppearance, Appearance, AppearanceResult, get_app as get_appearance_app, is_system_dark_mode,
 };
-use wxdragon::event::EventType;
+// use wxdragon::event::EventType;
 use wxdragon::geometry::{Point, Rect, Size};
 use wxdragon::id::{ID_ABOUT, ID_EXIT};
 use wxdragon::prelude::*;
@@ -36,7 +36,7 @@ pub fn show() {
     setup_status_bar(&frame_ui);
     setup_help_menu(&frame_ui);
     setup_window_state_persistence(&frame_ui);
-    setup_system_theme_watcher(&frame_ui);
+    // setup_system_theme_watcher(&frame_ui);
 
     check_ffmpeg_async();
 
@@ -56,25 +56,26 @@ fn apply_system_appearance() {
     }
 }
 
-fn setup_system_theme_watcher(frame_ui: &FrameUI) {
-    let frame_ui = frame_ui.clone();
-    let mut last_dark_mode = is_system_dark_mode();
+// TODO: re-implement later when renderer supports dynamic theme changes
+// fn setup_system_theme_watcher(frame_ui: &FrameUI) {
+//     let frame_ui = frame_ui.clone();
+//     let mut last_dark_mode = is_system_dark_mode();
 
-    let main_frame = frame_ui.main_frame;
-    main_frame
-        // TODO: implement wxSYS_COLOUR_WINDOW change event after they add it to wxDragon
-        .bind_internal(EventType::ANY, move |event| {
-            let dark_mode = is_system_dark_mode();
+//     let main_frame = frame_ui.main_frame;
+//     main_frame
+//         // TODO: implement wxSYS_COLOUR_WINDOW change event after they add it to wxDragon
+//         .bind_internal(EventType::ANY, move |event| {
+//             let dark_mode = is_system_dark_mode();
 
-            if dark_mode != last_dark_mode {
-                last_dark_mode = dark_mode;
-                apply_system_appearance();
-                frame_ui.apply_colors(dark_mode);
-            }
+//             if dark_mode != last_dark_mode {
+//                 last_dark_mode = dark_mode;
+//                 apply_system_appearance();
+//                 frame_ui.apply_colors(dark_mode);
+//             }
 
-            event.skip(true);
-        });
-}
+//             event.skip(true);
+//         });
+// }
 
 fn restore_window_state(frame_ui: &FrameUI) {
     let config = config::load();
