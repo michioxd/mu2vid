@@ -68,8 +68,17 @@ pub fn is_cover_artwork(path: &Path) -> bool {
         return false;
     }
 
-    path.file_stem()
+    let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+        return false;
+    };
+
+    if stem.to_ascii_lowercase().starts_with("cover") {
+        return true;
+    }
+
+    path.parent()
+        .and_then(|parent| parent.file_name())
         .and_then(|value| value.to_str())
-        .map(|stem| stem.to_ascii_lowercase().starts_with("cover"))
+        .map(|folder_name| stem == folder_name)
         .unwrap_or(false)
 }
