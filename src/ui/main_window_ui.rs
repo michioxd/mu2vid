@@ -15,6 +15,9 @@ pub struct FrameUI {
     pub main_frame: Frame,
     pub main_status: StatusBar,
     pub main_splitter: SplitterWindow,
+    pub add_queue_button: Button,
+    pub work_dir_text: TextCtrl,
+    pub work_dir_browse_button: Button,
     pub main_panel: Panel,
     pub queue_panel: Panel,
     pub queue_list_panel: ScrolledWindow,
@@ -50,9 +53,9 @@ impl FrameUI {
         main_splitter.split_vertically(&queue_ui.queue_panel, &preview_panel, 560);
 
         main_sizer.add(&main_splitter, 1, SizerFlag::Expand | SizerFlag::All, 8);
-        let bottom_controls_sizer = create_bottom_controls(&main_panel);
+        let bottom_controls_ui = create_bottom_controls(&main_panel);
         main_sizer.add_sizer(
-            &bottom_controls_sizer,
+            &bottom_controls_ui.sizer,
             0,
             SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
             8,
@@ -63,6 +66,9 @@ impl FrameUI {
             main_frame,
             main_status,
             main_splitter,
+            add_queue_button: bottom_controls_ui.add_queue_button,
+            work_dir_text: bottom_controls_ui.work_dir_text,
+            work_dir_browse_button: bottom_controls_ui.work_dir_browse_button,
             main_panel,
             queue_panel: queue_ui.queue_panel,
             queue_list_panel: queue_ui.queue_list_panel,
@@ -129,6 +135,13 @@ struct QueuePanelUI {
     queue_list_panel: ScrolledWindow,
     queue_item: Panel,
     cover_placeholder: Panel,
+}
+
+struct BottomControlsUI {
+    sizer: BoxSizer,
+    add_queue_button: Button,
+    work_dir_text: TextCtrl,
+    work_dir_browse_button: Button,
 }
 
 struct UiColors {
@@ -321,14 +334,10 @@ fn create_preview_panel(parent: &SplitterWindow) -> Panel {
     preview_panel
 }
 
-fn create_bottom_controls(parent: &Panel) -> BoxSizer {
+fn create_bottom_controls(parent: &Panel) -> BottomControlsUI {
     let bottom_controls_sizer = BoxSizer::builder(Orientation::Horizontal).build();
-    bottom_controls_sizer.add(
-        &art_button(parent, "Add new queue", ArtId::New),
-        0,
-        SizerFlag::Right,
-        4,
-    );
+    let add_queue_button = art_button(parent, "Add new queue", ArtId::New);
+    bottom_controls_sizer.add(&add_queue_button, 0, SizerFlag::Right, 4);
     bottom_controls_sizer.add(
         &art_button(parent, "Start", ArtId::TickMark),
         0,
@@ -338,9 +347,36 @@ fn create_bottom_controls(parent: &Panel) -> BoxSizer {
     bottom_controls_sizer.add(
         &art_button(parent, "Stop", ArtId::Delete),
         0,
-        SizerFlag::AlignLeft,
+        SizerFlag::Right,
+        8,
+    );
+
+    bottom_controls_sizer.add(
+        &StaticText::builder(parent).with_label("Work dir").build(),
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        4,
+    );
+    let work_dir_text = TextCtrl::builder(parent)
+        .with_size(Size::new(260, -1))
+        .build();
+    bottom_controls_sizer.add(&work_dir_text, 1, SizerFlag::Expand | SizerFlag::Right, 4);
+    let work_dir_browse_button = Button::builder(parent)
+        .with_label("Browse")
+        .with_size(Size::new(92, -1))
+        .build();
+    set_button_icon(work_dir_browse_button, ArtId::FileOpen);
+    bottom_controls_sizer.add(
+        &work_dir_browse_button,
+        0,
+        SizerFlag::AlignCenterVertical,
         0,
     );
 
-    bottom_controls_sizer
+    BottomControlsUI {
+        sizer: bottom_controls_sizer,
+        add_queue_button,
+        work_dir_text,
+        work_dir_browse_button,
+    }
 }

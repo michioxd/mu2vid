@@ -1,12 +1,13 @@
 use crate::ui::about;
 use crate::ui::main_window_ui::FrameUI;
+use crate::ui::new_queue;
 use crate::{config, deps::ffmpeg};
 use wxdragon::appearance::{
     AppAppearance, Appearance, AppearanceResult, get_app as get_appearance_app, is_system_dark_mode,
 };
 // use wxdragon::event::EventType;
 use wxdragon::geometry::{Point, Rect, Size};
-use wxdragon::id::{ID_ABOUT, ID_EXIT};
+use wxdragon::id::{ID_ABOUT, ID_EXIT, ID_OK};
 use wxdragon::prelude::*;
 
 const DEFAULT_WINDOW_WIDTH: i32 = 950;
@@ -35,6 +36,7 @@ pub fn show() {
     frame_ui.apply_colors(is_system_dark_mode());
     setup_status_bar(&frame_ui);
     setup_help_menu(&frame_ui);
+    setup_main_controls(&frame_ui);
     setup_window_state_persistence(&frame_ui);
     // setup_system_theme_watcher(&frame_ui);
 
@@ -256,6 +258,33 @@ fn setup_help_menu(frame_ui: &FrameUI) {
             event.skip(true);
         }
     });
+}
+
+fn setup_main_controls(frame_ui: &FrameUI) {
+    let status_bar = frame_ui.main_status;
+    frame_ui.add_queue_button.on_click(move |_| {
+        new_queue::show(status_bar);
+    });
+
+    let main_frame = frame_ui.main_frame;
+    let work_dir_text = frame_ui.work_dir_text;
+    frame_ui.work_dir_browse_button.on_click(move |_| {
+        if let Some(folder) = choose_work_dir(&main_frame, &work_dir_text.get_value()) {
+            work_dir_text.set_value(&folder);
+        }
+    });
+}
+
+fn choose_work_dir(parent: &Frame, current_path: &str) -> Option<String> {
+    let dialog = DirDialog::builder(parent, "Choose work dir", current_path)
+        .with_style((DirDialogStyle::Default | DirDialogStyle::MustExist).bits())
+        .build();
+
+    if dialog.show_modal() == ID_OK {
+        dialog.get_path()
+    } else {
+        None
+    }
 }
 
 fn setup_status_bar(frame_ui: &FrameUI) {
