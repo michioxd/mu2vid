@@ -120,6 +120,9 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
             }
 
             album_path_text.set_value(&folder.to_string_lossy());
+            if let Some(folder_name) = folder.file_name().and_then(|value| value.to_str()) {
+                title_text.set_value(folder_name);
+            }
             if let Some(cover_path) = find_cover_artwork(&folder) {
                 *selected_artwork.borrow_mut() = Some(cover_path.clone());
                 update_artwork_info(&artwork_info_text, &cover_path);
