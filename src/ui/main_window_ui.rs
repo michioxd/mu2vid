@@ -1,4 +1,5 @@
 use wxdragon::color::Colour;
+use wxdragon::ffi;
 use wxdragon::geometry::Size;
 use wxdragon::id::{ID_ABOUT, ID_EXIT, ID_HIGHEST};
 use wxdragon::prelude::*;
@@ -7,6 +8,7 @@ const ID_FILE_NEW_PROJECT: i32 = ID_HIGHEST + 1;
 const ID_FILE_OPEN: i32 = ID_HIGHEST + 2;
 const ID_FILE_SAVE: i32 = ID_HIGHEST + 3;
 const ID_FILE_SAVE_AS: i32 = ID_HIGHEST + 4;
+const WX_LEFT: ffi::wxd_Direction_t = 0x0010;
 
 #[derive(Clone)]
 pub struct FrameUI {
@@ -168,10 +170,16 @@ fn setup_menu_bar(frame: &Frame) {
         .append_separator()
         .append_item(ID_EXIT, "Exit", "")
         .build();
+    set_menu_item_icon(&file_menu, ID_FILE_NEW_PROJECT, ArtId::New);
+    set_menu_item_icon(&file_menu, ID_FILE_OPEN, ArtId::FileOpen);
+    set_menu_item_icon(&file_menu, ID_FILE_SAVE, ArtId::FileSave);
+    set_menu_item_icon(&file_menu, ID_FILE_SAVE_AS, ArtId::FileSaveAs);
+    set_menu_item_icon(&file_menu, ID_EXIT, ArtId::Quit);
 
     let help_menu = Menu::builder()
         .append_item(ID_ABOUT, "About mu2vid", "")
         .build();
+    set_menu_item_icon(&help_menu, ID_ABOUT, ArtId::Information);
 
     let menu_bar = MenuBar::builder()
         .append(file_menu, "File")
@@ -179,6 +187,37 @@ fn setup_menu_bar(frame: &Frame) {
         .build();
 
     frame.set_menu_bar(menu_bar);
+}
+
+fn set_menu_item_icon(menu: &Menu, id: i32, art_id: ArtId) {
+    if let (Some(item), Some(bitmap)) = (
+        menu.find_item(id),
+        ArtProvider::get_bitmap(art_id, ArtClient::Menu, None),
+    ) {
+        item.set_bitmap(&bitmap);
+    }
+}
+
+fn button_icon(art_id: ArtId) -> Option<BitmapBundle> {
+    ArtProvider::get_bitmap_bundle(art_id, ArtClient::Button, None)
+}
+
+fn set_button_icon(button: Button, art_id: ArtId) {
+    if let Some(icon) = button_icon(art_id) {
+        unsafe {
+            ffi::wxd_Button_SetBitmapBundle(
+                button.handle_ptr() as *mut ffi::wxd_Button_t,
+                icon.as_ptr(),
+                WX_LEFT,
+            );
+        }
+    }
+}
+
+fn art_button(parent: &dyn WxWidget, label: &str, art_id: ArtId) -> Button {
+    let button = Button::builder(parent).with_label(label).build();
+    set_button_icon(button, art_id);
+    button
 }
 
 fn create_queue_panel(parent: &SplitterWindow) -> QueuePanelUI {
@@ -229,33 +268,24 @@ fn create_queue_panel(parent: &SplitterWindow) -> QueuePanelUI {
     );
 
     let actions_sizer = BoxSizer::builder(Orientation::Vertical).build();
-    actions_sizer.add(
-        &Button::builder(&queue_item)
-            .with_label("Up")
-            .with_size(Size::new(64, -1))
-            .build(),
-        0,
-        SizerFlag::Expand | SizerFlag::Bottom,
-        2,
-    );
-    actions_sizer.add(
-        &Button::builder(&queue_item)
-            .with_label("Down")
-            .with_size(Size::new(64, -1))
-            .build(),
-        0,
-        SizerFlag::Expand | SizerFlag::Bottom,
-        2,
-    );
-    actions_sizer.add(
-        &Button::builder(&queue_item)
-            .with_label("Delete")
-            .with_size(Size::new(64, -1))
-            .build(),
-        0,
-        SizerFlag::Expand,
-        0,
-    );
+    let up_button = Button::builder(&queue_item)
+        .with_label("Up")
+        .with_size(Size::new(64, -1))
+        .build();
+    set_button_icon(up_button, ArtId::GoUp);
+    actions_sizer.add(&up_button, 0, SizerFlag::Expand | SizerFlag::Bottom, 2);
+    let down_button = Button::builder(&queue_item)
+        .with_label("Down")
+        .with_size(Size::new(64, -1))
+        .build();
+    set_button_icon(down_button, ArtId::GoDown);
+    actions_sizer.add(&down_button, 0, SizerFlag::Expand | SizerFlag::Bottom, 2);
+    let delete_button = Button::builder(&queue_item)
+        .with_label("Delete")
+        .with_size(Size::new(64, -1))
+        .build();
+    set_button_icon(delete_button, ArtId::Delete);
+    actions_sizer.add(&delete_button, 0, SizerFlag::Expand, 0);
     queue_item_sizer.add_sizer(&actions_sizer, 0, SizerFlag::Expand | SizerFlag::All, 6);
 
     queue_item.set_sizer(queue_item_sizer, true);
@@ -294,19 +324,19 @@ fn create_preview_panel(parent: &SplitterWindow) -> Panel {
 fn create_bottom_controls(parent: &Panel) -> BoxSizer {
     let bottom_controls_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     bottom_controls_sizer.add(
-        &Button::builder(parent).with_label("Add new queue").build(),
+        &art_button(parent, "Add new queue", ArtId::New),
         0,
         SizerFlag::Right,
         4,
     );
     bottom_controls_sizer.add(
-        &Button::builder(parent).with_label("Start").build(),
+        &art_button(parent, "Start", ArtId::TickMark),
         0,
         SizerFlag::Right,
         4,
     );
     bottom_controls_sizer.add(
-        &Button::builder(parent).with_label("Stop").build(),
+        &art_button(parent, "Stop", ArtId::Delete),
         0,
         SizerFlag::AlignLeft,
         0,
