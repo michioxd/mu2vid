@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+env_logger = "0.11.10"
+log = "0.4.30"
+wxdragon = { version = "0.9.16", features = ["xrc"] }
+
+[build-dependencies]
+embed-manifest = "1.5.0"

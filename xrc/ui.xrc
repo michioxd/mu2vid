@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<resource xmlns="http://www.wxwidgets.org/wxxrc" version="2.5.3.0">
+  <object class="wxFrame" name="MainFrame">
+    <size>700,600</size>
+    <style>wxDEFAULT_FRAME_STYLE|wxTAB_TRAVERSAL</style>
+    <title></title>
+    <centered>1</centered>
+    <aui_managed>1</aui_managed>
+  </object>
+</resource>
