@@ -1,12 +1,15 @@
 use crate::ui::new_queue_ui::NewQueueUI;
 use crate::ui::new_queue_ui::PREVIEW_SIZE;
+use crate::ui::utils::{format_file_size, open_file_location};
 use image::imageops::FilterType;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
 };
+use std::time::{Duration, Instant};
 use wxdragon::id::ID_OK;
 use wxdragon::prelude::*;
 
@@ -54,21 +57,66 @@ fn remember_queue_window(frame: Frame) {
 
 fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
     let load_generation = Arc::new(AtomicU64::new(0));
+    let selected_artwork_path = Rc::new(RefCell::new(None::<PathBuf>));
+    let last_artwork_click = Rc::new(RefCell::new(None::<Instant>));
+
+    queue_ui.add_button.enable(false);
 
     let frame = queue_ui.frame;
     queue_ui.cancel_button.on_click(move |_| {
         frame.close(true);
     });
 
+    let add_button = queue_ui.add_button;
+    let album_path_text = queue_ui.album_path_text;
+    let title_text = queue_ui.title_text;
+    let selected_artwork = Rc::clone(&selected_artwork_path);
+    queue_ui.album_path_text.on_text_updated(move |_| {
+        update_create_button(add_button, album_path_text, title_text, &selected_artwork);
+    });
+
+    let add_button = queue_ui.add_button;
+    let album_path_text = queue_ui.album_path_text;
+    let title_text = queue_ui.title_text;
+    let selected_artwork = Rc::clone(&selected_artwork_path);
+    queue_ui.title_text.on_text_updated(move |_| {
+        update_create_button(add_button, album_path_text, title_text, &selected_artwork);
+    });
+
+    let selected_artwork = Rc::clone(&selected_artwork_path);
+    let last_click = Rc::clone(&last_artwork_click);
+    queue_ui
+        .artwork_preview_panel
+        .on_mouse_left_down(move |event| {
+            event.skip(false);
+            open_artwork_location_on_double_click(&selected_artwork, &last_click);
+        });
+
+    let selected_artwork = Rc::clone(&selected_artwork_path);
+    let last_click = Rc::clone(&last_artwork_click);
+    queue_ui
+        .artwork_preview_bitmap
+        .on_mouse_left_down(move |event| {
+            event.skip(false);
+            open_artwork_location_on_double_click(&selected_artwork, &last_click);
+        });
+
     let frame = queue_ui.frame;
     let album_path_text = queue_ui.album_path_text;
     let artwork_preview_bitmap = queue_ui.artwork_preview_bitmap;
     let artwork_preview_text = queue_ui.artwork_preview_text;
+    let artwork_info_text = queue_ui.artwork_info_text;
+    let add_button = queue_ui.add_button;
+    let title_text = queue_ui.title_text;
     let browse_load_generation = Arc::clone(&load_generation);
+    let selected_artwork = Rc::clone(&selected_artwork_path);
     queue_ui.browse_button.on_click(move |_| {
         if let Some(folder) = choose_album_folder(&frame, &album_path_text.get_value()) {
             album_path_text.set_value(&folder.to_string_lossy());
             if let Some(cover_path) = find_cover_artwork(&folder) {
+                *selected_artwork.borrow_mut() = Some(cover_path.clone());
+                update_artwork_info(&artwork_info_text, &cover_path);
+                update_create_button(add_button, album_path_text, title_text, &selected_artwork);
                 load_artwork_preview_async(
                     artwork_preview_bitmap,
                     artwork_preview_text,
@@ -77,8 +125,11 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
                     Arc::clone(&browse_load_generation),
                 );
             } else {
+                *selected_artwork.borrow_mut() = None;
                 artwork_preview_text.set_label("No cover artwork found");
+                artwork_info_text.set_label("No artwork selected");
                 status_bar.set_status_text("No cover artwork found", 0);
+                update_create_button(add_button, album_path_text, title_text, &selected_artwork);
             }
         }
     });
@@ -87,9 +138,16 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
     let album_path_text = queue_ui.album_path_text;
     let artwork_preview_bitmap = queue_ui.artwork_preview_bitmap;
     let artwork_preview_text = queue_ui.artwork_preview_text;
+    let artwork_info_text = queue_ui.artwork_info_text;
+    let add_button = queue_ui.add_button;
+    let title_text = queue_ui.title_text;
     let select_load_generation = Arc::clone(&load_generation);
+    let selected_artwork = Rc::clone(&selected_artwork_path);
     queue_ui.select_artwork_button.on_click(move |_| {
         if let Some(artwork_path) = choose_artwork_file(&frame, &album_path_text.get_value()) {
+            *selected_artwork.borrow_mut() = Some(artwork_path.clone());
+            update_artwork_info(&artwork_info_text, &artwork_path);
+            update_create_button(add_button, album_path_text, title_text, &selected_artwork);
             load_artwork_preview_async(
                 artwork_preview_bitmap,
                 artwork_preview_text,
@@ -99,6 +157,76 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
             );
         }
     });
+}
+
+fn update_create_button(
+    add_button: Button,
+    album_path_text: TextCtrl,
+    title_text: TextCtrl,
+    selected_artwork_path: &Rc<RefCell<Option<PathBuf>>>,
+) {
+    let form_complete = !album_path_text.get_value().trim().is_empty()
+        && !title_text.get_value().trim().is_empty()
+        && selected_artwork_path.borrow().is_some();
+    add_button.enable(form_complete);
+}
+
+fn open_artwork_location_on_double_click(
+    selected_artwork_path: &Rc<RefCell<Option<PathBuf>>>,
+    last_click: &Rc<RefCell<Option<Instant>>>,
+) {
+    if selected_artwork_path.borrow().is_none() {
+        *last_click.borrow_mut() = None;
+        return;
+    }
+
+    let now = Instant::now();
+    let double_clicked = last_click
+        .borrow()
+        .map(|previous| now.duration_since(previous) <= double_click_interval())
+        .unwrap_or(false);
+    *last_click.borrow_mut() = Some(now);
+
+    if double_clicked {
+        if let Some(path) = selected_artwork_path.borrow().as_deref() {
+            open_file_location(path);
+        }
+        *last_click.borrow_mut() = None;
+    }
+}
+
+fn double_click_interval() -> Duration {
+    #[cfg(target_os = "windows")]
+    {
+        let milliseconds = unsafe { GetDoubleClickTime() };
+        return Duration::from_millis(milliseconds as u64);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Duration::from_millis(500)
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn GetDoubleClickTime() -> u32;
+}
+
+fn update_artwork_info(info_text: &StaticText, path: &Path) {
+    let dimensions = image::image_dimensions(path)
+        .map(|(width, height)| format!("{width} x {height}px"))
+        .unwrap_or_else(|_| "Unknown dimensions".to_string());
+    let size = std::fs::metadata(path)
+        .map(|metadata| format_file_size(metadata.len()))
+        .unwrap_or_else(|_| "Unknown size".to_string());
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Artwork".to_string());
+
+    info_text.set_label(&format!("{file_name}\n{dimensions}\n{size}"));
 }
 
 fn choose_album_folder(parent: &Frame, current_path: &str) -> Option<PathBuf> {

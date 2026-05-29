@@ -20,6 +20,7 @@ pub struct NewQueueUI {
     pub artwork_preview_panel: Panel,
     pub artwork_preview_bitmap: StaticBitmap,
     pub artwork_preview_text: StaticText,
+    pub artwork_info_text: StaticText,
     pub select_artwork_button: Button,
     pub title_text: TextCtrl,
     pub description_text: TextCtrl,
@@ -106,10 +107,16 @@ impl NewQueueUI {
         );
         preview_sizer.add_stretch_spacer(1);
         artwork_preview_panel.set_sizer(preview_sizer, true);
-        root_sizer.add(
-            &artwork_preview_panel,
+        let artwork_preview_row_sizer = BoxSizer::builder(Orientation::Horizontal).build();
+        artwork_preview_row_sizer.add(&artwork_preview_panel, 0, SizerFlag::Right, BORDER);
+        let artwork_info_text = StaticText::builder(&panel)
+            .with_label("No artwork selected")
+            .build();
+        artwork_preview_row_sizer.add(&artwork_info_text, 1, SizerFlag::Expand, 0);
+        root_sizer.add_sizer(
+            &artwork_preview_row_sizer,
             0,
-            SizerFlag::AlignCentre | SizerFlag::Top,
+            SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
             BORDER,
         );
 
@@ -239,6 +246,7 @@ impl NewQueueUI {
             artwork_preview_panel,
             artwork_preview_bitmap,
             artwork_preview_text,
+            artwork_info_text,
             select_artwork_button,
             title_text,
             description_text,
