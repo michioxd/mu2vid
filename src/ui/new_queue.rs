@@ -1,6 +1,8 @@
 use crate::ui::new_queue_ui::NewQueueUI;
 use crate::ui::new_queue_ui::PREVIEW_SIZE;
-use crate::ui::utils::{format_file_size, open_file_location};
+use crate::ui::utils::{
+    double_click_interval, format_file_size, is_cover_artwork, open_file_location,
+};
 use image::imageops::FilterType;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -9,7 +11,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
 };
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use wxdragon::id::ID_OK;
 use wxdragon::prelude::*;
 
@@ -112,6 +114,11 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
     let selected_artwork = Rc::clone(&selected_artwork_path);
     queue_ui.browse_button.on_click(move |_| {
         if let Some(folder) = choose_album_folder(&frame, &album_path_text.get_value()) {
+            if !contains_audio_file(&folder) {
+                show_no_audio_files_message(&frame);
+                return;
+            }
+
             album_path_text.set_value(&folder.to_string_lossy());
             if let Some(cover_path) = find_cover_artwork(&folder) {
                 *selected_artwork.borrow_mut() = Some(cover_path.clone());
@@ -135,6 +142,20 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
     });
 
     let frame = queue_ui.frame;
+
+    fn show_no_audio_files_message(parent: &Frame) {
+        let dialog = MessageDialog::builder(
+            parent,
+            "Sorry we couldn't find any audio files in the selected folder. Please choose a different folder that contains your music files. Currently supported audio formats are FLAC, WAV, MP3, M4A, AAC, OGG, OPUS, WMA, ALAC, AIFF, AIF, APE and WV.",
+            "Folder is invalid",
+        )
+        .with_style(
+            MessageDialogStyle::OK | MessageDialogStyle::IconWarning | MessageDialogStyle::Centre,
+        )
+        .build();
+
+        dialog.show_modal();
+    }
     let album_path_text = queue_ui.album_path_text;
     let artwork_preview_bitmap = queue_ui.artwork_preview_bitmap;
     let artwork_preview_text = queue_ui.artwork_preview_text;
@@ -195,25 +216,6 @@ fn open_artwork_location_on_double_click(
     }
 }
 
-fn double_click_interval() -> Duration {
-    #[cfg(target_os = "windows")]
-    {
-        let milliseconds = unsafe { GetDoubleClickTime() };
-        return Duration::from_millis(milliseconds as u64);
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Duration::from_millis(500)
-    }
-}
-
-#[cfg(target_os = "windows")]
-#[link(name = "user32")]
-unsafe extern "system" {
-    fn GetDoubleClickTime() -> u32;
-}
-
 fn update_artwork_info(info_text: &StaticText, path: &Path) {
     let dimensions = image::image_dimensions(path)
         .map(|(width, height)| format!("{width} x {height}px"))
@@ -256,6 +258,40 @@ fn choose_artwork_file(parent: &Frame, current_path: &str) -> Option<PathBuf> {
     }
 }
 
+fn contains_audio_file(folder: &Path) -> bool {
+    std::fs::read_dir(folder)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .any(|path| path.is_file() && is_audio_file(&path))
+}
+
+fn is_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "flac"
+                    | "wav"
+                    | "mp3"
+                    | "m4a"
+                    | "aac"
+                    | "ogg"
+                    | "opus"
+                    | "wma"
+                    | "alac"
+                    | "aiff"
+                    | "aif"
+                    | "ape"
+                    | "wv"
+            )
+        })
+        .unwrap_or(false)
+}
+
 fn find_cover_artwork(folder: &Path) -> Option<PathBuf> {
     let mut candidates = std::fs::read_dir(folder)
         .ok()?
@@ -269,23 +305,6 @@ fn find_cover_artwork(folder: &Path) -> Option<PathBuf> {
             .map(|name| name.to_string_lossy().to_lowercase())
     });
     candidates.into_iter().next()
-}
-
-fn is_cover_artwork(path: &Path) -> bool {
-    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
-        return false;
-    };
-    if !matches!(
-        extension.to_ascii_lowercase().as_str(),
-        "jpg" | "jpeg" | "png"
-    ) {
-        return false;
-    }
-
-    path.file_stem()
-        .and_then(|value| value.to_str())
-        .map(|stem| stem.to_ascii_lowercase().starts_with("cover"))
-        .unwrap_or(false)
 }
 
 fn load_artwork_preview_async(

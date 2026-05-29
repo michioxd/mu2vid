@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 pub fn format_file_size(bytes: u64) -> String {
     const KB: f64 = 1024.0;
@@ -35,4 +36,40 @@ pub fn open_file_location(path: &Path) {
         let folder = path.parent().unwrap_or(path);
         let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
     }
+}
+
+pub fn double_click_interval() -> Duration {
+    #[cfg(target_os = "windows")]
+    {
+        let milliseconds = unsafe { GetDoubleClickTime() };
+        return Duration::from_millis(milliseconds as u64);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Duration::from_millis(500)
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn GetDoubleClickTime() -> u32;
+}
+
+pub fn is_cover_artwork(path: &Path) -> bool {
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    if !matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "jpg" | "jpeg" | "png"
+    ) {
+        return false;
+    }
+
+    path.file_stem()
+        .and_then(|value| value.to_str())
+        .map(|stem| stem.to_ascii_lowercase().starts_with("cover"))
+        .unwrap_or(false)
 }
