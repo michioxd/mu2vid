@@ -157,6 +157,7 @@ impl NewQueueUI {
         let description_text = TextCtrl::builder(&panel)
             .with_size(Size::new(-1, 130))
             .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
+            .with_value("\n\n{{timestamp}}")
             .build();
         root_sizer.add(
             &description_text,
