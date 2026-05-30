@@ -2,6 +2,8 @@ use crate::ui::about;
 use crate::ui::main_window_ui::FrameUI;
 use crate::ui::new_queue;
 use crate::{config, deps::ffmpeg};
+use std::cell::RefCell;
+use std::rc::Rc;
 use wxdragon::appearance::{
     AppAppearance, Appearance, AppearanceResult, get_app as get_appearance_app, is_system_dark_mode,
 };
@@ -262,8 +264,25 @@ fn setup_help_menu(frame_ui: &FrameUI) {
 
 fn setup_main_controls(frame_ui: &FrameUI) {
     let status_bar = frame_ui.main_status;
+    let frame_ui_for_queue = frame_ui.clone();
+    let queue_items = Rc::new(RefCell::new(Vec::<new_queue::QueueItemDraft>::new()));
     frame_ui.add_queue_button.on_click(move |_| {
-        new_queue::show(status_bar);
+        let frame_ui = frame_ui_for_queue.clone();
+        let queue_items = Rc::clone(&queue_items);
+        let on_add = Rc::new(move |item: new_queue::QueueItemDraft| {
+            frame_ui.add_queue_item(
+                &item.title,
+                &item.artwork_path.to_string_lossy(),
+                &item.video_quality,
+                &item.audio_quality,
+            );
+            frame_ui
+                .main_status
+                .set_status_text(&format!("Added queue: {}", item.title), 0);
+            queue_items.borrow_mut().push(item);
+        });
+
+        new_queue::show(status_bar, on_add);
     });
 
     let main_frame = frame_ui.main_frame;

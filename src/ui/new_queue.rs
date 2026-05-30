@@ -19,13 +19,21 @@ thread_local! {
     static OPEN_QUEUE_FRAME: RefCell<Option<Frame>> = const { RefCell::new(None) };
 }
 
-pub fn show(status_bar: StatusBar) {
+#[derive(Clone)]
+pub struct QueueItemDraft {
+    pub artwork_path: PathBuf,
+    pub title: String,
+    pub video_quality: String,
+    pub audio_quality: String,
+}
+
+pub fn show(status_bar: StatusBar, on_add: Rc<dyn Fn(QueueItemDraft)>) {
     if focus_open_queue_window() {
         return;
     }
 
     let queue_ui = NewQueueUI::new();
-    setup_events(&queue_ui, status_bar);
+    setup_events(&queue_ui, status_bar, on_add);
     remember_queue_window(queue_ui.frame);
     queue_ui.frame.show(true);
     queue_ui.frame.set_focus();
@@ -57,7 +65,7 @@ fn remember_queue_window(frame: Frame) {
     });
 }
 
-fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
+fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar, on_add: Rc<dyn Fn(QueueItemDraft)>) {
     let load_generation = Arc::new(AtomicU64::new(0));
     let selected_artwork_path = Rc::new(RefCell::new(None::<PathBuf>));
     let last_artwork_click = Rc::new(RefCell::new(None::<Instant>));
@@ -66,6 +74,36 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar) {
 
     let frame = queue_ui.frame;
     queue_ui.cancel_button.on_click(move |_| {
+        frame.close(true);
+    });
+
+    let frame = queue_ui.frame;
+    let album_path_text = queue_ui.album_path_text;
+    let title_text = queue_ui.title_text;
+    let video_quality_choice = queue_ui.video_quality_choice;
+    let audio_quality_choice = queue_ui.audio_quality_choice;
+    let selected_artwork = Rc::clone(&selected_artwork_path);
+    queue_ui.add_button.on_click(move |_| {
+        let Some(artwork_path) = selected_artwork.borrow().clone() else {
+            return;
+        };
+
+        let album_path = album_path_text.get_value();
+        let title = title_text.get_value().trim().to_string();
+        if album_path.trim().is_empty() || title.is_empty() {
+            return;
+        }
+
+        on_add(QueueItemDraft {
+            artwork_path,
+            title,
+            video_quality: video_quality_choice
+                .get_string_selection()
+                .unwrap_or_else(|| "1080p".to_string()),
+            audio_quality: audio_quality_choice
+                .get_string_selection()
+                .unwrap_or_else(|| "320kbps (aac)".to_string()),
+        });
         frame.close(true);
     });
 
