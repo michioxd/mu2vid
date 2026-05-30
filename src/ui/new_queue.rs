@@ -1,9 +1,9 @@
+use crate::media::artwork::make_square_cover_rgba;
 use crate::ui::new_queue_ui::NewQueueUI;
 use crate::ui::new_queue_ui::PREVIEW_SIZE;
 use crate::ui::utils::{
     double_click_interval, format_file_size, is_audio_file, is_cover_artwork, open_file_location,
 };
-use image::imageops::FilterType;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -25,7 +25,38 @@ pub struct QueueItemDraft {
     pub artwork_path: PathBuf,
     pub title: String,
     pub video_quality: String,
-    pub audio_quality: String,
+    pub audio_codec: String,
+    pub audio_bitrate_kbps: u32,
+}
+
+pub const ORIGINAL_AUDIO_CODEC: &str = "original";
+pub const DEFAULT_AUDIO_CODEC: &str = "aac";
+pub const DEFAULT_AUDIO_BITRATE_KBPS: u32 = 320;
+pub const MIN_AUDIO_BITRATE_KBPS: u32 = 64;
+pub const MAX_AUDIO_BITRATE_KBPS: u32 = 512;
+
+impl QueueItemDraft {
+    pub fn audio_display_label(&self) -> String {
+        if self.audio_codec == ORIGINAL_AUDIO_CODEC {
+            ORIGINAL_AUDIO_CODEC.to_string()
+        } else {
+            format!("{} {}kbps", self.audio_codec, self.audio_bitrate_kbps)
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn audio_ffmpeg_args(&self) -> Vec<String> {
+        if self.audio_codec == ORIGINAL_AUDIO_CODEC {
+            vec!["-c:a".to_string(), "copy".to_string()]
+        } else {
+            vec![
+                "-c:a".to_string(),
+                self.audio_codec.clone(),
+                "-b:a".to_string(),
+                format!("{}k", self.audio_bitrate_kbps),
+            ]
+        }
+    }
 }
 
 pub fn show(status_bar: StatusBar, on_add: Rc<dyn Fn(QueueItemDraft)>) {
@@ -95,7 +126,15 @@ fn setup_initial_values(
     queue_ui.album_path_text.set_value(&item.album_path);
     queue_ui.title_text.set_value(&item.title);
     set_choice_to_value(&queue_ui.video_quality_choice, &item.video_quality);
-    set_choice_to_value(&queue_ui.audio_quality_choice, &item.audio_quality);
+    set_choice_to_value(&queue_ui.audio_codec_choice, &item.audio_codec);
+    queue_ui
+        .audio_bitrate_slider
+        .set_value(clamp_audio_bitrate(item.audio_bitrate_kbps) as i32);
+    update_audio_bitrate_controls(
+        queue_ui.audio_codec_choice,
+        queue_ui.audio_bitrate_slider,
+        queue_ui.audio_bitrate_label,
+    );
     update_artwork_info(&queue_ui.artwork_info_text, &item.artwork_path);
     load_artwork_preview_async(
         queue_ui.artwork_preview_bitmap,
@@ -134,7 +173,8 @@ fn setup_events(
     let album_path_text = queue_ui.album_path_text;
     let title_text = queue_ui.title_text;
     let video_quality_choice = queue_ui.video_quality_choice;
-    let audio_quality_choice = queue_ui.audio_quality_choice;
+    let audio_codec_choice = queue_ui.audio_codec_choice;
+    let audio_bitrate_slider = queue_ui.audio_bitrate_slider;
     let selected_artwork = Rc::clone(&selected_artwork_path);
     queue_ui.add_button.on_click(move |_| {
         let Some(artwork_path) = selected_artwork.borrow().clone() else {
@@ -154,11 +194,40 @@ fn setup_events(
             video_quality: video_quality_choice
                 .get_string_selection()
                 .unwrap_or_else(|| "1080p".to_string()),
-            audio_quality: audio_quality_choice
+            audio_codec: audio_codec_choice
                 .get_string_selection()
-                .unwrap_or_else(|| "320kbps (aac)".to_string()),
+                .unwrap_or_else(|| DEFAULT_AUDIO_CODEC.to_string()),
+            audio_bitrate_kbps: clamp_audio_bitrate(audio_bitrate_slider.get_value() as u32),
         });
         frame.close(true);
+    });
+
+    update_audio_bitrate_controls(
+        queue_ui.audio_codec_choice,
+        queue_ui.audio_bitrate_slider,
+        queue_ui.audio_bitrate_label,
+    );
+
+    let audio_codec_choice = queue_ui.audio_codec_choice;
+    let audio_bitrate_slider = queue_ui.audio_bitrate_slider;
+    let audio_bitrate_label = queue_ui.audio_bitrate_label;
+    queue_ui.audio_codec_choice.on_selection_changed(move |_| {
+        update_audio_bitrate_controls(
+            audio_codec_choice,
+            audio_bitrate_slider,
+            audio_bitrate_label,
+        );
+    });
+
+    let audio_codec_choice = queue_ui.audio_codec_choice;
+    let audio_bitrate_slider = queue_ui.audio_bitrate_slider;
+    let audio_bitrate_label = queue_ui.audio_bitrate_label;
+    queue_ui.audio_bitrate_slider.on_slider(move |_| {
+        update_audio_bitrate_controls(
+            audio_codec_choice,
+            audio_bitrate_slider,
+            audio_bitrate_label,
+        );
     });
 
     let add_button = queue_ui.add_button;
@@ -282,6 +351,30 @@ fn set_choice_to_value(choice: &Choice, value: &str) {
             return;
         }
     }
+}
+
+fn update_audio_bitrate_controls(
+    codec_choice: Choice,
+    bitrate_slider: Slider,
+    bitrate_label: StaticText,
+) {
+    let codec = codec_choice
+        .get_string_selection()
+        .unwrap_or_else(|| DEFAULT_AUDIO_CODEC.to_string());
+    let original_audio = codec == ORIGINAL_AUDIO_CODEC;
+    bitrate_slider.enable(!original_audio);
+
+    if original_audio {
+        bitrate_label.set_label("Bitrate: disabled for original");
+    } else {
+        let bitrate = clamp_audio_bitrate(bitrate_slider.get_value() as u32);
+        bitrate_slider.set_value(bitrate as i32);
+        bitrate_label.set_label(&format!("Bitrate: {bitrate}kbps"));
+    }
+}
+
+pub fn clamp_audio_bitrate(value: u32) -> u32 {
+    value.clamp(MIN_AUDIO_BITRATE_KBPS, MAX_AUDIO_BITRATE_KBPS)
 }
 
 fn update_create_button(
@@ -424,21 +517,5 @@ fn load_artwork_preview_async(
 }
 
 fn make_cover_rgba(path: &Path) -> Option<Vec<u8>> {
-    let image = image::open(path).ok()?.to_rgba8();
-    let (width, height) = image.dimensions();
-    if width == 0 || height == 0 {
-        return None;
-    }
-
-    let preview_size = PREVIEW_SIZE as u32;
-    let scale = (preview_size as f32 / width as f32).max(preview_size as f32 / height as f32);
-    let scaled_width = (width as f32 * scale).ceil() as u32;
-    let scaled_height = (height as f32 * scale).ceil() as u32;
-    let resized =
-        image::imageops::resize(&image, scaled_width, scaled_height, FilterType::Lanczos3);
-    let x = scaled_width.saturating_sub(preview_size) / 2;
-    let y = scaled_height.saturating_sub(preview_size) / 2;
-    let cropped = image::imageops::crop_imm(&resized, x, y, preview_size, preview_size).to_image();
-
-    Some(cropped.into_raw())
+    make_square_cover_rgba(path, PREVIEW_SIZE as u32)
 }

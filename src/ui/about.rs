@@ -8,7 +8,7 @@ pub fn show() {
 
     let mut info = AboutDialogInfo::new();
     info.set_name("mu2vid");
-    info.set_description("mu2vid");
+    info.set_description(&format!("mu2vid version {}", env!("CARGO_PKG_VERSION")));
     info.add_developer("michioxd");
     info.set_website("https://github.com/michioxd/mu2vid");
     info.set_license("GPL v3.0");

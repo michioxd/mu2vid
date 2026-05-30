@@ -1,4 +1,7 @@
-use crate::ui::new_queue::QueueItemDraft;
+use crate::ui::new_queue::{
+    DEFAULT_AUDIO_BITRATE_KBPS, DEFAULT_AUDIO_CODEC, ORIGINAL_AUDIO_CODEC, QueueItemDraft,
+    clamp_audio_bitrate,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -20,7 +23,12 @@ pub struct ProjectAlbum {
     pub artwork_path: String,
     pub title: String,
     pub video_quality: String,
-    pub audio_quality: String,
+    #[serde(default = "default_audio_codec")]
+    pub audio_codec: String,
+    #[serde(default = "default_audio_bitrate_kbps")]
+    pub audio_bitrate_kbps: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_quality: Option<String>,
 }
 
 impl ProjectFile {
@@ -42,19 +50,69 @@ impl From<&QueueItemDraft> for ProjectAlbum {
             artwork_path: item.artwork_path.to_string_lossy().to_string(),
             title: item.title.clone(),
             video_quality: item.video_quality.clone(),
-            audio_quality: item.audio_quality.clone(),
+            audio_codec: item.audio_codec.clone(),
+            audio_bitrate_kbps: item.audio_bitrate_kbps,
+            audio_quality: None,
         }
     }
 }
 
 impl From<ProjectAlbum> for QueueItemDraft {
     fn from(album: ProjectAlbum) -> Self {
+        let (audio_codec, audio_bitrate_kbps) = normalized_audio_settings(&album);
+
         Self {
             album_path: album.album_path,
             artwork_path: PathBuf::from(album.artwork_path),
             title: album.title,
             video_quality: album.video_quality,
-            audio_quality: album.audio_quality,
+            audio_codec,
+            audio_bitrate_kbps,
         }
+    }
+}
+
+fn default_audio_codec() -> String {
+    DEFAULT_AUDIO_CODEC.to_string()
+}
+
+fn default_audio_bitrate_kbps() -> u32 {
+    DEFAULT_AUDIO_BITRATE_KBPS
+}
+
+fn normalized_audio_settings(album: &ProjectAlbum) -> (String, u32) {
+    if let Some(settings) = album
+        .audio_quality
+        .as_deref()
+        .and_then(parse_legacy_audio_quality)
+    {
+        return settings;
+    }
+
+    if !album.audio_codec.is_empty() {
+        return (
+            album.audio_codec.to_lowercase(),
+            clamp_audio_bitrate(album.audio_bitrate_kbps),
+        );
+    }
+
+    (DEFAULT_AUDIO_CODEC.to_string(), DEFAULT_AUDIO_BITRATE_KBPS)
+}
+
+fn parse_legacy_audio_quality(value: &str) -> Option<(String, u32)> {
+    let value = value.trim().to_lowercase();
+    if value == "original" {
+        return Some((ORIGINAL_AUDIO_CODEC.to_string(), DEFAULT_AUDIO_BITRATE_KBPS));
+    }
+
+    let bitrate_end = value.find("kbps")?;
+    let bitrate = value[..bitrate_end].trim().parse::<u32>().ok()?;
+    let codec_start = value.find('(')? + 1;
+    let codec_end = value[codec_start..].find(')')? + codec_start;
+    let codec = value[codec_start..codec_end].trim();
+    if codec.is_empty() {
+        None
+    } else {
+        Some((codec.to_string(), clamp_audio_bitrate(bitrate)))
     }
 }

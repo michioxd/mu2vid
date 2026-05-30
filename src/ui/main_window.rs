@@ -336,7 +336,7 @@ fn setup_main_controls(frame_ui: &FrameUI) {
                 &item.title,
                 &item.artwork_path.to_string_lossy(),
                 &item.video_quality,
-                &item.audio_quality,
+                &item.audio_display_label(),
             );
             setup_queue_item_edit(
                 &frame_ui,
@@ -553,7 +553,7 @@ fn add_queue_item_from_project(
         &item.title,
         &item.artwork_path.to_string_lossy(),
         &item.video_quality,
-        &item.audio_quality,
+        &item.audio_display_label(),
     );
     setup_queue_item_edit(
         frame_ui,
@@ -625,9 +625,10 @@ fn load_last_project(
 fn update_project_title_bar(frame_ui: &FrameUI, project_state: &ProjectState) {
     let title = project_state.title();
     let dirty_prefix = if project_state.is_dirty() { "*" } else { "" };
-    frame_ui
-        .main_frame
-        .set_title(&format!("{dirty_prefix}{title} - mu2vid"));
+    frame_ui.main_frame.set_title(&format!(
+        "{dirty_prefix}{title} - mu2vid v{}",
+        env!("CARGO_PKG_VERSION")
+    ));
 }
 
 fn mark_project_dirty(frame_ui: &FrameUI, project_state: &ProjectState) {
@@ -913,7 +914,8 @@ fn setup_queue_item_edit(
             queue_item_ui.title_text.set_label(&updated_item.title);
             queue_item_ui.quality_text.set_label(&format!(
                 "Video: {} | Audio: {}",
-                updated_item.video_quality, updated_item.audio_quality
+                updated_item.video_quality,
+                updated_item.audio_display_label()
             ));
             frame_ui.update_queue_item_artwork(
                 queue_item_ui.cover_bitmap,
@@ -956,7 +958,7 @@ fn sync_queue_display(
                 item.title.clone(),
                 item.artwork_path.to_string_lossy().to_string(),
                 item.video_quality.clone(),
-                item.audio_quality.clone(),
+                item.audio_display_label(),
             )
         })
         .collect::<Vec<_>>();

@@ -102,7 +102,7 @@ impl FrameUI {
         title: &str,
         artwork_path: &str,
         video_quality: &str,
-        audio_quality: &str,
+        audio_label: &str,
     ) -> QueueItemUI {
         self.empty_queue_panel.show(false);
 
@@ -129,7 +129,7 @@ impl FrameUI {
         let title_text = StaticText::builder(&queue_item).with_label(title).build();
         info_sizer.add(&title_text, 0, SizerFlag::Expand, 0);
         let quality_text = StaticText::builder(&queue_item)
-            .with_label(&format!("Video: {video_quality} | Audio: {audio_quality}"))
+            .with_label(&format!("Video: {video_quality} | Audio: {audio_label}"))
             .build();
         info_sizer.add(&quality_text, 0, SizerFlag::Expand | SizerFlag::Top, 4);
         info_sizer.add(
@@ -226,14 +226,14 @@ impl FrameUI {
     pub fn sync_queue_items(&self, items: &[(QueueItemUI, String, String, String, String)]) {
         self.empty_queue_panel.show(items.is_empty());
 
-        for (index, (item_ui, title, artwork_path, video_quality, audio_quality)) in
+        for (index, (item_ui, title, artwork_path, video_quality, audio_label)) in
             items.iter().enumerate()
         {
             item_ui.panel.show(true);
             item_ui.title_text.set_label(title);
             item_ui
                 .quality_text
-                .set_label(&format!("Video: {video_quality} | Audio: {audio_quality}"));
+                .set_label(&format!("Video: {video_quality} | Audio: {audio_label}"));
             item_ui.up_button.enable(index > 0);
             item_ui.down_button.enable(index + 1 < items.len());
             self.update_queue_item_artwork(item_ui.cover_bitmap, artwork_path);

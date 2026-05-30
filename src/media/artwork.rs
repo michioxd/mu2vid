@@ -1,4 +1,4 @@
-use image::imageops::FilterType;
+use image::GenericImageView;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -337,21 +337,26 @@ fn load_queue_artwork_preview_async(preview: StaticBitmap, path: PathBuf) {
 }
 
 fn make_queue_cover_rgba(path: &Path) -> Option<Vec<u8>> {
-    let image = image::open(path).ok()?.to_rgba8();
+    make_square_cover_rgba(path, QUEUE_COVER_SIZE as u32)
+}
+
+pub fn make_square_cover_rgba(path: &Path, preview_size: u32) -> Option<Vec<u8>> {
+    let image = image::ImageReader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()?
+        .decode()
+        .ok()?;
     let (width, height) = image.dimensions();
     if width == 0 || height == 0 {
         return None;
     }
 
-    let preview_size = QUEUE_COVER_SIZE as u32;
-    let scale = (preview_size as f32 / width as f32).max(preview_size as f32 / height as f32);
-    let scaled_width = (width as f32 * scale).ceil() as u32;
-    let scaled_height = (height as f32 * scale).ceil() as u32;
-    let resized =
-        image::imageops::resize(&image, scaled_width, scaled_height, FilterType::Lanczos3);
-    let x = scaled_width.saturating_sub(preview_size) / 2;
-    let y = scaled_height.saturating_sub(preview_size) / 2;
-    let cropped = image::imageops::crop_imm(&resized, x, y, preview_size, preview_size).to_image();
+    let crop_size = width.min(height);
+    let x = width.saturating_sub(crop_size) / 2;
+    let y = height.saturating_sub(crop_size) / 2;
+    let cropped = image.crop_imm(x, y, crop_size, crop_size).to_rgba8();
+    let resized = image::imageops::thumbnail(&cropped, preview_size, preview_size);
 
-    Some(cropped.into_raw())
+    Some(resized.into_raw())
 }

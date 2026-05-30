@@ -3,9 +3,9 @@ use wxdragon::id::{ID_CANCEL, ID_OK};
 use wxdragon::prelude::*;
 
 const WINDOW_WIDTH: i32 = 450;
-const WINDOW_HEIGHT: i32 = 660;
+const WINDOW_HEIGHT: i32 = 760;
 const MIN_WINDOW_WIDTH: i32 = 420;
-const MIN_WINDOW_HEIGHT: i32 = 620;
+const MIN_WINDOW_HEIGHT: i32 = 720;
 const FIELD_HEIGHT: i32 = 26;
 pub const PREVIEW_SIZE: i32 = 180;
 const BORDER: i32 = 12;
@@ -25,7 +25,9 @@ pub struct NewQueueUI {
     pub title_text: TextCtrl,
     pub description_text: TextCtrl,
     pub video_quality_choice: Choice,
-    pub audio_quality_choice: Choice,
+    pub audio_codec_choice: Choice,
+    pub audio_bitrate_slider: Slider,
+    pub audio_bitrate_label: StaticText,
     pub add_button: Button,
     pub cancel_button: Button,
 }
@@ -155,7 +157,7 @@ impl NewQueueUI {
             BORDER,
         );
         let description_text = TextCtrl::builder(&panel)
-            .with_size(Size::new(-1, 130))
+            .with_size(Size::new(-1, 220))
             .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
             .with_value(
                 "\n\n{{timestamp}}\n\nuploaded using mu2vid\nhttps://github.com/michioxd/mu2vid",
@@ -186,20 +188,35 @@ impl NewQueueUI {
         video_sizer.add(&video_quality_choice, 0, SizerFlag::Expand, 0);
 
         let audio_sizer = BoxSizer::builder(Orientation::Vertical).build();
-        let audio_quality_label = StaticText::builder(&panel)
-            .with_label("Audio quality")
+        let audio_codec_label = StaticText::builder(&panel)
+            .with_label("Audio codec")
             .build();
-        let audio_quality_choice = Choice::builder(&panel)
-            .with_choices(audio_quality_choices())
-            .with_selection(Some(6))
+        let audio_codec_choice = Choice::builder(&panel)
+            .with_choices(audio_codec_choices())
+            .with_selection(Some(0))
+            .build();
+        let audio_bitrate_label = StaticText::builder(&panel)
+            .with_label("Bitrate: 320kbps")
+            .build();
+        let audio_bitrate_slider = Slider::builder(&panel)
+            .with_min_value(64)
+            .with_max_value(512)
+            .with_value(320)
             .build();
         audio_sizer.add(
-            &audio_quality_label,
+            &audio_codec_label,
             0,
             SizerFlag::Expand | SizerFlag::Bottom,
             4,
         );
-        audio_sizer.add(&audio_quality_choice, 0, SizerFlag::Expand, 0);
+        audio_sizer.add(&audio_codec_choice, 0, SizerFlag::Expand, 0);
+        audio_sizer.add(
+            &audio_bitrate_label,
+            0,
+            SizerFlag::Expand | SizerFlag::Top | SizerFlag::Bottom,
+            4,
+        );
+        audio_sizer.add(&audio_bitrate_slider, 0, SizerFlag::Expand, 0);
 
         quality_sizer.add_sizer(&video_sizer, 1, SizerFlag::Expand | SizerFlag::Right, GAP);
         quality_sizer.add_sizer(&audio_sizer, 1, SizerFlag::Expand | SizerFlag::Left, GAP);
@@ -254,7 +271,9 @@ impl NewQueueUI {
             title_text,
             description_text,
             video_quality_choice,
-            audio_quality_choice,
+            audio_codec_choice,
+            audio_bitrate_slider,
+            audio_bitrate_label,
             add_button,
             cancel_button,
         }
@@ -270,24 +289,9 @@ fn video_quality_choices() -> Vec<String> {
     .collect()
 }
 
-fn audio_quality_choices() -> Vec<String> {
-    [
-        "Original",
-        "96kbps (aac)",
-        "128kbps (aac)",
-        "160kbps (aac)",
-        "192kbps (aac)",
-        "256kbps (aac)",
-        "320kbps (aac)",
-        "64kbps (opus)",
-        "96kbps (opus)",
-        "128kbps (opus)",
-        "160kbps (opus)",
-        "192kbps (opus)",
-        "256kbps (opus)",
-        "320kbps (opus)",
-    ]
-    .iter()
-    .map(|value| value.to_string())
-    .collect()
+fn audio_codec_choices() -> Vec<String> {
+    ["aac", "opus", "original"]
+        .iter()
+        .map(|value| value.to_string())
+        .collect()
 }
