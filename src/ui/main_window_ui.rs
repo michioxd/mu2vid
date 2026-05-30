@@ -209,6 +209,20 @@ impl FrameUI {
         artwork::update_queue_artwork(cover_bitmap, artwork_path);
     }
 
+    pub fn remove_queue_item(&self, item_ui: QueueItemUI) {
+        artwork::unregister_queue_artwork(item_ui.cover_bitmap);
+        item_ui.panel.show(false);
+        let panel = item_ui.panel;
+        wxdragon::call_after(Box::new(move || {
+            if panel.is_valid() {
+                panel.destroy();
+            }
+        }));
+        self.queue_list_panel.layout();
+        self.queue_panel.layout();
+        self.main_frame.layout();
+    }
+
     pub fn sync_queue_items(&self, items: &[(QueueItemUI, String, String, String, String)]) {
         self.empty_queue_panel.show(items.is_empty());
 

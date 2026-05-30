@@ -42,6 +42,14 @@ pub fn update_queue_artwork(preview: StaticBitmap, artwork_path: impl Into<PathB
     });
 }
 
+pub fn unregister_queue_artwork(preview: StaticBitmap) {
+    QUEUE_ARTWORK_LOADER.with(|loader| {
+        if let Some(loader) = loader.borrow().as_ref() {
+            loader.unregister(preview);
+        }
+    });
+}
+
 pub fn install_queue_artwork_loader(queue_list_panel: &ScrolledWindow) {
     let artwork_loader = QueueArtworkLoader::new(*queue_list_panel);
     QUEUE_ARTWORK_LOADER.with(|loader| {
@@ -94,6 +102,12 @@ impl QueueArtworkLoader {
             path,
             state,
         });
+    }
+
+    fn unregister(&self, preview: StaticBitmap) {
+        self.items
+            .borrow_mut()
+            .retain(|item| item.preview.handle_ptr() != preview.handle_ptr());
     }
 
     fn replace_or_register(&self, preview: StaticBitmap, path: PathBuf) {

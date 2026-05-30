@@ -432,7 +432,7 @@ fn new_project(
     queue_item_uis: &Rc<RefCell<Vec<QueueItemUI>>>,
     project_state: &ProjectState,
 ) {
-    clear_queue(queue_items, queue_item_uis);
+    clear_queue(frame_ui, queue_items, queue_item_uis);
     frame_ui.work_dir_text.set_value("");
     project_state.reset();
     clear_last_project_path();
@@ -451,7 +451,7 @@ fn open_project(
 ) {
     match project::storage::load(path) {
         Ok(project_file) => {
-            clear_queue(queue_items, queue_item_uis);
+            clear_queue(frame_ui, queue_items, queue_item_uis);
             frame_ui.work_dir_text.set_value(&project_file.work_dir);
             let title = clean_project_title(&project_file.title);
 
@@ -569,12 +569,13 @@ fn add_queue_item_from_project(
 }
 
 fn clear_queue(
+    frame_ui: &FrameUI,
     queue_items: &Rc<RefCell<Vec<new_queue::QueueItemDraft>>>,
     queue_item_uis: &Rc<RefCell<Vec<QueueItemUI>>>,
 ) {
     queue_items.borrow_mut().clear();
     for item_ui in queue_item_uis.borrow_mut().drain(..) {
-        item_ui.panel.destroy();
+        frame_ui.remove_queue_item(item_ui);
     }
 }
 
@@ -778,7 +779,7 @@ fn show_unsaved_project_dialog(parent: &Frame) -> i32 {
         dialog_for_save.end_modal(ID_OK);
     });
 
-    button_sizer.add(&save_button, 0, SizerFlag::AlignCenterVertical, 0);
+    button_sizer.add(&save_button, 0, SizerFlag::Right, 6);
     button_sizer.add(&quit_button, 0, SizerFlag::Right, 6);
     button_sizer.add(&cancel_button, 0, SizerFlag::Right, 6);
 
@@ -876,8 +877,8 @@ fn setup_queue_item_edit(
         }
 
         queue_items_for_delete.borrow_mut().remove(item_index);
-        queue_item_uis_for_delete.borrow_mut().remove(item_index);
-        queue_item_ui.panel.destroy();
+        let item_ui = queue_item_uis_for_delete.borrow_mut().remove(item_index);
+        frame_ui_for_delete.remove_queue_item(item_ui);
         sync_queue_display(
             &frame_ui_for_delete,
             &queue_items_for_delete,
