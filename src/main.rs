@@ -2,6 +2,8 @@ use wxdragon::prelude::*;
 
 mod config;
 mod deps;
+mod media;
+mod project;
 mod ui;
 
 fn main() {

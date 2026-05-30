@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub struct AppConfig {
     pub ffmpeg_path: Option<String>,
     pub window: WindowConfig,
+    pub recent_projects: Vec<String>,
+    pub last_project_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +25,8 @@ impl Default for AppConfig {
         Self {
             ffmpeg_path: None,
             window: WindowConfig::default(),
+            recent_projects: Vec::new(),
+            last_project_path: None,
         }
     }
 }

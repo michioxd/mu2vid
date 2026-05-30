@@ -157,7 +157,9 @@ impl NewQueueUI {
         let description_text = TextCtrl::builder(&panel)
             .with_size(Size::new(-1, 130))
             .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
-            .with_value("\n\n{{timestamp}}")
+            .with_value(
+                "\n\n{{timestamp}}\n\nuploaded using mu2vid\nhttps://github.com/michioxd/mu2vid",
+            )
             .build();
         root_sizer.add(
             &description_text,

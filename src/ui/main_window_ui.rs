@@ -1,26 +1,19 @@
 use wxdragon::color::Colour;
 use wxdragon::ffi;
 use wxdragon::geometry::Size;
-use wxdragon::id::{ID_ABOUT, ID_EXIT, ID_HIGHEST};
+use wxdragon::id::{ID_ABOUT, ID_EXIT, ID_HIGHEST, ID_OK};
 use wxdragon::prelude::*;
 
-use image::imageops::FilterType;
-use std::cell::RefCell;
-use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use crate::media::artwork;
+use crate::project;
 
-const ID_FILE_NEW_PROJECT: i32 = ID_HIGHEST + 1;
-const ID_FILE_OPEN: i32 = ID_HIGHEST + 2;
-const ID_FILE_SAVE: i32 = ID_HIGHEST + 3;
-const ID_FILE_SAVE_AS: i32 = ID_HIGHEST + 4;
+pub const ID_FILE_NEW_PROJECT: i32 = ID_HIGHEST + 1;
+pub const ID_FILE_OPEN: i32 = ID_HIGHEST + 2;
+pub const ID_FILE_SAVE: i32 = ID_HIGHEST + 3;
+pub const ID_FILE_SAVE_AS: i32 = ID_HIGHEST + 4;
+pub const ID_FILE_RECENT_PROJECT_START: i32 = ID_HIGHEST + 20;
+pub const MAX_RECENT_PROJECT_MENU_ITEMS: usize = 10;
 const WX_LEFT: ffi::wxd_Direction_t = 0x0010;
-const QUEUE_COVER_SIZE: i32 = 96;
-const QUEUE_CARD_HEIGHT_ESTIMATE: i32 = QUEUE_COVER_SIZE + 20;
-const QUEUE_LAZY_PRELOAD_MARGIN: i32 = QUEUE_CARD_HEIGHT_ESTIMATE * 3;
-
-thread_local! {
-    static QUEUE_ARTWORK_LOADER: RefCell<Option<Rc<QueueArtworkLoader>>> = const { RefCell::new(None) };
-}
 
 #[derive(Clone)]
 pub struct FrameUI {
@@ -37,6 +30,18 @@ pub struct FrameUI {
     pub empty_queue_panel: Panel,
     pub empty_queue_text: StaticText,
     pub preview_panel: Panel,
+}
+
+#[derive(Clone, Copy)]
+pub struct QueueItemUI {
+    pub panel: Panel,
+    pub title_text: StaticText,
+    pub quality_text: StaticText,
+    pub cover_bitmap: StaticBitmap,
+    pub up_button: Button,
+    pub down_button: Button,
+    pub edit_button: Button,
+    pub delete_button: Button,
 }
 
 impl FrameUI {
@@ -98,7 +103,7 @@ impl FrameUI {
         artwork_path: &str,
         video_quality: &str,
         audio_quality: &str,
-    ) {
+    ) -> QueueItemUI {
         self.empty_queue_panel.show(false);
 
         let queue_item = Panel::builder(&self.queue_list_panel)
@@ -108,14 +113,12 @@ impl FrameUI {
 
         let cover_placeholder = Panel::builder(&queue_item)
             .with_style(PanelStyle::BorderSimple | PanelStyle::TabTraversal)
-            .with_size(Size::new(QUEUE_COVER_SIZE, QUEUE_COVER_SIZE))
+            .with_size(artwork::queue_cover_size())
             .build();
         let cover_sizer = BoxSizer::builder(Orientation::Vertical).build();
         let cover_bitmap = StaticBitmap::builder(&cover_placeholder)
-            .with_bitmap(Some(
-                Bitmap::new(QUEUE_COVER_SIZE, QUEUE_COVER_SIZE).unwrap_or_else(Bitmap::null_bitmap),
-            ))
-            .with_size(Size::new(QUEUE_COVER_SIZE, QUEUE_COVER_SIZE))
+            .with_bitmap(Some(artwork::queue_cover_placeholder()))
+            .with_size(artwork::queue_cover_size())
             .with_scale_mode(Some(ScaleMode::AspectFill))
             .build();
         cover_sizer.add(&cover_bitmap, 0, SizerFlag::AlignCentre, 0);
@@ -123,20 +126,12 @@ impl FrameUI {
         queue_item_sizer.add(&cover_placeholder, 0, SizerFlag::All, 6);
 
         let info_sizer = BoxSizer::builder(Orientation::Vertical).build();
-        info_sizer.add(
-            &StaticText::builder(&queue_item).with_label(title).build(),
-            0,
-            SizerFlag::Expand,
-            0,
-        );
-        info_sizer.add(
-            &StaticText::builder(&queue_item)
-                .with_label(&format!("Video: {video_quality} | Audio: {audio_quality}"))
-                .build(),
-            0,
-            SizerFlag::Expand | SizerFlag::Top,
-            4,
-        );
+        let title_text = StaticText::builder(&queue_item).with_label(title).build();
+        info_sizer.add(&title_text, 0, SizerFlag::Expand, 0);
+        let quality_text = StaticText::builder(&queue_item)
+            .with_label(&format!("Video: {video_quality} | Audio: {audio_quality}"))
+            .build();
+        info_sizer.add(&quality_text, 0, SizerFlag::Expand | SizerFlag::Top, 4);
         info_sizer.add(
             &StaticText::builder(&queue_item)
                 .with_label("Status: waiting")
@@ -156,18 +151,31 @@ impl FrameUI {
         );
 
         let actions_sizer = BoxSizer::builder(Orientation::Vertical).build();
+        let move_actions_sizer = BoxSizer::builder(Orientation::Horizontal).build();
         let up_button = Button::builder(&queue_item)
-            .with_label("Up")
-            .with_size(Size::new(64, -1))
+            .with_label("")
+            .with_size(Size::new(31, -1))
             .build();
         set_button_icon(up_button, ArtId::GoUp);
-        actions_sizer.add(&up_button, 0, SizerFlag::Expand | SizerFlag::Bottom, 2);
+        move_actions_sizer.add(&up_button, 1, SizerFlag::Expand | SizerFlag::Right, 2);
         let down_button = Button::builder(&queue_item)
-            .with_label("Down")
-            .with_size(Size::new(64, -1))
+            .with_label("")
+            .with_size(Size::new(31, -1))
             .build();
         set_button_icon(down_button, ArtId::GoDown);
-        actions_sizer.add(&down_button, 0, SizerFlag::Expand | SizerFlag::Bottom, 2);
+        move_actions_sizer.add(&down_button, 1, SizerFlag::Expand, 0);
+        actions_sizer.add_sizer(
+            &move_actions_sizer,
+            0,
+            SizerFlag::Expand | SizerFlag::Bottom,
+            2,
+        );
+        let edit_button = Button::builder(&queue_item)
+            .with_label("Edit")
+            .with_size(Size::new(64, -1))
+            .build();
+        set_button_icon(edit_button, ArtId::FileOpen);
+        actions_sizer.add(&edit_button, 0, SizerFlag::Expand | SizerFlag::Bottom, 2);
         let delete_button = Button::builder(&queue_item)
             .with_label("Delete")
             .with_size(Size::new(64, -1))
@@ -183,12 +191,43 @@ impl FrameUI {
         self.queue_panel.layout();
         self.main_frame.layout();
 
-        QUEUE_ARTWORK_LOADER.with(|loader| {
-            if let Some(loader) = loader.borrow().as_ref() {
-                loader.register(cover_bitmap, PathBuf::from(artwork_path));
-                loader.load_visible();
-            }
-        });
+        artwork::register_queue_artwork(cover_bitmap, artwork_path);
+
+        QueueItemUI {
+            panel: queue_item,
+            title_text,
+            quality_text,
+            cover_bitmap,
+            up_button,
+            down_button,
+            edit_button,
+            delete_button,
+        }
+    }
+
+    pub fn update_queue_item_artwork(&self, cover_bitmap: StaticBitmap, artwork_path: &str) {
+        artwork::update_queue_artwork(cover_bitmap, artwork_path);
+    }
+
+    pub fn sync_queue_items(&self, items: &[(QueueItemUI, String, String, String, String)]) {
+        self.empty_queue_panel.show(items.is_empty());
+
+        for (index, (item_ui, title, artwork_path, video_quality, audio_quality)) in
+            items.iter().enumerate()
+        {
+            item_ui.panel.show(true);
+            item_ui.title_text.set_label(title);
+            item_ui
+                .quality_text
+                .set_label(&format!("Video: {video_quality} | Audio: {audio_quality}"));
+            item_ui.up_button.enable(index > 0);
+            item_ui.down_button.enable(index + 1 < items.len());
+            self.update_queue_item_artwork(item_ui.cover_bitmap, artwork_path);
+        }
+
+        self.queue_list_panel.layout();
+        self.queue_panel.layout();
+        self.main_frame.layout();
     }
 
     pub fn apply_colors(&self, dark_mode: bool) {
@@ -243,6 +282,22 @@ impl FrameUI {
         self.main_frame.refresh(true, None);
         self.main_frame.update();
     }
+
+    pub fn refresh_menu_bar(&self) {
+        setup_menu_bar(&self.main_frame);
+    }
+}
+
+pub fn prompt_project_title(parent: &Frame, current_title: &str) -> Option<String> {
+    let dialog = TextEntryDialog::builder(parent, "Project title", "Change project title")
+        .with_default_value(current_title)
+        .build();
+
+    if dialog.show_modal() == ID_OK {
+        dialog.get_value()
+    } else {
+        None
+    }
 }
 
 struct QueuePanelUI {
@@ -285,14 +340,42 @@ impl UiColors {
 }
 
 fn setup_menu_bar(frame: &Frame) {
+    let config = crate::config::load();
+    let recent_menu = Menu::builder().build();
+    if config.recent_projects.is_empty() {
+        let _ = recent_menu.append(
+            ID_FILE_RECENT_PROJECT_START,
+            "No recent projects",
+            "",
+            ItemKind::Normal,
+        );
+        recent_menu.enable_item(ID_FILE_RECENT_PROJECT_START, false);
+    } else {
+        for (index, path) in config
+            .recent_projects
+            .iter()
+            .take(MAX_RECENT_PROJECT_MENU_ITEMS)
+            .enumerate()
+        {
+            let label = format!("{} {}", index + 1, path);
+            let _ = recent_menu.append(
+                ID_FILE_RECENT_PROJECT_START + index as i32,
+                &label,
+                "",
+                ItemKind::Normal,
+            );
+        }
+    }
+
     let file_menu = Menu::builder()
         .append_item(ID_FILE_NEW_PROJECT, "New Project\tCtrl+N", "")
         .append_item(ID_FILE_OPEN, "Open\tCtrl+O", "")
         .append_item(ID_FILE_SAVE, "Save\tCtrl+S", "")
         .append_item(ID_FILE_SAVE_AS, "Save as\tCtrl+Alt+S", "")
-        .append_separator()
-        .append_item(ID_EXIT, "Exit", "")
         .build();
+    let _ = file_menu.append_submenu(recent_menu, "Recent Project", "");
+    file_menu.append_separator();
+    let _ = file_menu.append(ID_EXIT, "Exit", "", ItemKind::Normal);
     set_menu_item_icon(&file_menu, ID_FILE_NEW_PROJECT, ArtId::New);
     set_menu_item_icon(&file_menu, ID_FILE_OPEN, ArtId::FileOpen);
     set_menu_item_icon(&file_menu, ID_FILE_SAVE, ArtId::FileSave);
@@ -304,8 +387,17 @@ fn setup_menu_bar(frame: &Frame) {
         .build();
     set_menu_item_icon(&help_menu, ID_ABOUT, ArtId::Information);
 
+    let project_menu = Menu::builder()
+        .append_item(
+            project::ID_CHANGE_TITLE,
+            "Change project title",
+            "Change the title of the current project",
+        )
+        .build();
+
     let menu_bar = MenuBar::builder()
         .append(file_menu, "File")
+        .append(project_menu, "Project")
         .append(help_menu, "Help")
         .build();
 
@@ -350,12 +442,7 @@ fn create_queue_panel(parent: &SplitterWindow) -> QueuePanelUI {
         .with_style(ScrolledWindowStyle::VScroll)
         .build();
     queue_list_panel.set_scroll_rate(5, 5);
-
-    let artwork_loader = QueueArtworkLoader::new(queue_list_panel);
-    QUEUE_ARTWORK_LOADER.with(|loader| {
-        *loader.borrow_mut() = Some(artwork_loader.clone());
-    });
-    bind_queue_artwork_loader(&queue_list_panel, artwork_loader);
+    artwork::install_queue_artwork_loader(&queue_list_panel);
 
     let queue_list_sizer = BoxSizer::builder(Orientation::Vertical).build();
     let empty_queue_panel = Panel::builder(&queue_list_panel).build();
@@ -386,193 +473,6 @@ fn create_queue_panel(parent: &SplitterWindow) -> QueuePanelUI {
         empty_queue_panel,
         empty_queue_text,
     }
-}
-
-struct QueueArtworkLoader {
-    viewport: ScrolledWindow,
-    items: RefCell<Vec<QueueArtworkItem>>,
-    next_index: RefCell<usize>,
-    last_scroll_position: RefCell<i32>,
-}
-
-struct QueueArtworkItem {
-    preview: StaticBitmap,
-    path: PathBuf,
-    state: QueueArtworkState,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum QueueArtworkState {
-    Pending,
-    Loading,
-}
-
-impl QueueArtworkLoader {
-    fn new(viewport: ScrolledWindow) -> Rc<Self> {
-        Rc::new(Self {
-            viewport,
-            items: RefCell::new(Vec::new()),
-            next_index: RefCell::new(0),
-            last_scroll_position: RefCell::new(0),
-        })
-    }
-
-    fn register(&self, preview: StaticBitmap, path: PathBuf) {
-        self.items.borrow_mut().push(QueueArtworkItem {
-            preview,
-            path,
-            state: QueueArtworkState::Pending,
-        });
-    }
-
-    fn update_scroll_position(&self, position: i32) {
-        *self.last_scroll_position.borrow_mut() = position;
-        self.load_visible();
-    }
-
-    fn load_visible(&self) {
-        let viewport_height = self.viewport.get_client_size().height.max(0);
-        let start_y = *self.last_scroll_position.borrow();
-        let end_y = start_y + viewport_height + QUEUE_LAZY_PRELOAD_MARGIN;
-        let start_y = start_y.saturating_sub(QUEUE_LAZY_PRELOAD_MARGIN);
-
-        let mut items = self.items.borrow_mut();
-        for (index, item) in items.iter_mut().enumerate() {
-            if item.state != QueueArtworkState::Pending {
-                continue;
-            }
-
-            let item_y = (index as i32) * QUEUE_CARD_HEIGHT_ESTIMATE;
-            if item_y + QUEUE_CARD_HEIGHT_ESTIMATE < start_y || item_y > end_y {
-                continue;
-            }
-
-            item.state = QueueArtworkState::Loading;
-            load_queue_artwork_preview_async(item.preview, item.path.clone());
-        }
-    }
-
-    fn load_next_pending(&self) {
-        let mut items = self.items.borrow_mut();
-        let mut next_index = self.next_index.borrow_mut();
-        while *next_index < items.len() {
-            let item = &mut items[*next_index];
-            *next_index += 1;
-            if item.state == QueueArtworkState::Pending {
-                item.state = QueueArtworkState::Loading;
-                load_queue_artwork_preview_async(item.preview, item.path.clone());
-                break;
-            }
-        }
-    }
-}
-
-fn bind_queue_artwork_loader(queue_list_panel: &ScrolledWindow, loader: Rc<QueueArtworkLoader>) {
-    let loader_for_line_down = loader.clone();
-    queue_list_panel.on_scroll_linedown(move |event| {
-        if let Some(position) = event.get_position() {
-            loader_for_line_down.update_scroll_position(position * 5);
-        } else {
-            loader_for_line_down.load_next_pending();
-        }
-    });
-
-    let loader_for_line_up = loader.clone();
-    queue_list_panel.on_scroll_lineup(move |event| {
-        if let Some(position) = event.get_position() {
-            loader_for_line_up.update_scroll_position(position * 5);
-        } else {
-            loader_for_line_up.load_visible();
-        }
-    });
-
-    let loader_for_page_down = loader.clone();
-    queue_list_panel.on_scroll_pagedown(move |event| {
-        if let Some(position) = event.get_position() {
-            loader_for_page_down.update_scroll_position(position * 5);
-        } else {
-            loader_for_page_down.load_next_pending();
-        }
-    });
-
-    let loader_for_page_up = loader.clone();
-    queue_list_panel.on_scroll_pageup(move |event| {
-        if let Some(position) = event.get_position() {
-            loader_for_page_up.update_scroll_position(position * 5);
-        } else {
-            loader_for_page_up.load_visible();
-        }
-    });
-
-    let loader_for_thumb_track = loader.clone();
-    queue_list_panel.on_thumb_track(move |event| {
-        if let Some(position) = event.get_position() {
-            loader_for_thumb_track.update_scroll_position(position * 5);
-        }
-    });
-
-    let loader_for_thumb_release = loader.clone();
-    queue_list_panel.on_thumb_release(move |event| {
-        if let Some(position) = event.get_position() {
-            loader_for_thumb_release.update_scroll_position(position * 5);
-        }
-    });
-
-    let loader_for_changed = loader.clone();
-    queue_list_panel.on_scroll_changed(move |event| {
-        if let Some(position) = event.get_position() {
-            loader_for_changed.update_scroll_position(position * 5);
-        } else {
-            loader_for_changed.load_visible();
-        }
-    });
-
-    let loader_for_wheel = loader.clone();
-    queue_list_panel.on_mouse_wheel(move |_| {
-        loader_for_wheel.load_next_pending();
-    });
-
-    queue_list_panel.on_size(move |_| {
-        loader.load_visible();
-    });
-}
-
-fn load_queue_artwork_preview_async(preview: StaticBitmap, path: PathBuf) {
-    std::thread::spawn(move || {
-        let preview_rgba = make_queue_cover_rgba(&path);
-
-        wxdragon::call_after(Box::new(move || {
-            if !preview.is_valid() {
-                return;
-            }
-
-            if let Some(bitmap) = preview_rgba.and_then(|rgba| {
-                Bitmap::from_rgba(&rgba, QUEUE_COVER_SIZE as u32, QUEUE_COVER_SIZE as u32)
-            }) {
-                preview.set_bitmap(&bitmap);
-            }
-        }));
-    });
-}
-
-fn make_queue_cover_rgba(path: &Path) -> Option<Vec<u8>> {
-    let image = image::open(path).ok()?.to_rgba8();
-    let (width, height) = image.dimensions();
-    if width == 0 || height == 0 {
-        return None;
-    }
-
-    let preview_size = QUEUE_COVER_SIZE as u32;
-    let scale = (preview_size as f32 / width as f32).max(preview_size as f32 / height as f32);
-    let scaled_width = (width as f32 * scale).ceil() as u32;
-    let scaled_height = (height as f32 * scale).ceil() as u32;
-    let resized =
-        image::imageops::resize(&image, scaled_width, scaled_height, FilterType::Lanczos3);
-    let x = scaled_width.saturating_sub(preview_size) / 2;
-    let y = scaled_height.saturating_sub(preview_size) / 2;
-    let cropped = image::imageops::crop_imm(&resized, x, y, preview_size, preview_size).to_image();
-
-    Some(cropped.into_raw())
 }
 
 fn create_preview_panel(parent: &SplitterWindow) -> Panel {

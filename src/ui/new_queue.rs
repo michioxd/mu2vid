@@ -21,6 +21,7 @@ thread_local! {
 
 #[derive(Clone)]
 pub struct QueueItemDraft {
+    pub album_path: String,
     pub artwork_path: PathBuf,
     pub title: String,
     pub video_quality: String,
@@ -28,12 +29,26 @@ pub struct QueueItemDraft {
 }
 
 pub fn show(status_bar: StatusBar, on_add: Rc<dyn Fn(QueueItemDraft)>) {
+    show_with_initial(status_bar, None, "Add queue", on_add);
+}
+
+pub fn show_edit(status_bar: StatusBar, item: QueueItemDraft, on_save: Rc<dyn Fn(QueueItemDraft)>) {
+    show_with_initial(status_bar, Some(item), "Save", on_save);
+}
+
+fn show_with_initial(
+    status_bar: StatusBar,
+    initial_item: Option<QueueItemDraft>,
+    action_label: &str,
+    on_submit: Rc<dyn Fn(QueueItemDraft)>,
+) {
     if focus_open_queue_window() {
         return;
     }
 
     let queue_ui = NewQueueUI::new();
-    setup_events(&queue_ui, status_bar, on_add);
+    setup_initial_values(&queue_ui, status_bar, initial_item.clone(), action_label);
+    setup_events(&queue_ui, status_bar, on_submit, initial_item);
     remember_queue_window(queue_ui.frame);
     queue_ui.frame.show(true);
     queue_ui.frame.set_focus();
@@ -65,12 +80,50 @@ fn remember_queue_window(frame: Frame) {
     });
 }
 
-fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar, on_add: Rc<dyn Fn(QueueItemDraft)>) {
+fn setup_initial_values(
+    queue_ui: &NewQueueUI,
+    status_bar: StatusBar,
+    initial_item: Option<QueueItemDraft>,
+    action_label: &str,
+) {
+    queue_ui.add_button.set_label(action_label);
+
+    let Some(item) = initial_item else {
+        return;
+    };
+
+    queue_ui.album_path_text.set_value(&item.album_path);
+    queue_ui.title_text.set_value(&item.title);
+    set_choice_to_value(&queue_ui.video_quality_choice, &item.video_quality);
+    set_choice_to_value(&queue_ui.audio_quality_choice, &item.audio_quality);
+    update_artwork_info(&queue_ui.artwork_info_text, &item.artwork_path);
+    load_artwork_preview_async(
+        queue_ui.artwork_preview_bitmap,
+        queue_ui.artwork_preview_text,
+        status_bar,
+        item.artwork_path,
+        Arc::new(AtomicU64::new(0)),
+    );
+}
+
+fn setup_events(
+    queue_ui: &NewQueueUI,
+    status_bar: StatusBar,
+    on_submit: Rc<dyn Fn(QueueItemDraft)>,
+    initial_item: Option<QueueItemDraft>,
+) {
     let load_generation = Arc::new(AtomicU64::new(0));
-    let selected_artwork_path = Rc::new(RefCell::new(None::<PathBuf>));
+    let selected_artwork_path = Rc::new(RefCell::new(
+        initial_item.as_ref().map(|item| item.artwork_path.clone()),
+    ));
     let last_artwork_click = Rc::new(RefCell::new(None::<Instant>));
 
-    queue_ui.add_button.enable(false);
+    update_create_button(
+        queue_ui.add_button,
+        queue_ui.album_path_text,
+        queue_ui.title_text,
+        &selected_artwork_path,
+    );
 
     let frame = queue_ui.frame;
     queue_ui.cancel_button.on_click(move |_| {
@@ -94,7 +147,8 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar, on_add: Rc<dyn Fn(
             return;
         }
 
-        on_add(QueueItemDraft {
+        on_submit(QueueItemDraft {
+            album_path,
             artwork_path,
             title,
             video_quality: video_quality_choice
@@ -219,6 +273,15 @@ fn setup_events(queue_ui: &NewQueueUI, status_bar: StatusBar, on_add: Rc<dyn Fn(
             );
         }
     });
+}
+
+fn set_choice_to_value(choice: &Choice, value: &str) {
+    for index in 0..choice.get_count() {
+        if choice.get_string(index).as_deref() == Some(value) {
+            choice.set_selection(index);
+            return;
+        }
+    }
 }
 
 fn update_create_button(
