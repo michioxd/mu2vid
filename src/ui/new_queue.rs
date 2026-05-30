@@ -1,7 +1,7 @@
 use crate::ui::new_queue_ui::NewQueueUI;
 use crate::ui::new_queue_ui::PREVIEW_SIZE;
 use crate::ui::utils::{
-    double_click_interval, format_file_size, is_cover_artwork, open_file_location,
+    double_click_interval, format_file_size, is_audio_file, is_cover_artwork, open_file_location,
 };
 use image::imageops::FilterType;
 use std::cell::RefCell;
@@ -269,30 +269,6 @@ fn contains_audio_file(folder: &Path) -> bool {
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .any(|path| path.is_file() && is_audio_file(&path))
-}
-
-fn is_audio_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|value| value.to_str())
-        .map(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "flac"
-                    | "wav"
-                    | "mp3"
-                    | "m4a"
-                    | "aac"
-                    | "ogg"
-                    | "opus"
-                    | "wma"
-                    | "alac"
-                    | "aiff"
-                    | "aif"
-                    | "ape"
-                    | "wv"
-            )
-        })
-        .unwrap_or(false)
 }
 
 fn find_cover_artwork(folder: &Path) -> Option<PathBuf> {

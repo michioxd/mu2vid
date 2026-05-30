@@ -82,3 +82,27 @@ pub fn is_cover_artwork(path: &Path) -> bool {
         .map(|folder_name| stem == folder_name)
         .unwrap_or(false)
 }
+
+pub fn is_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "flac"
+                    | "wav"
+                    | "mp3"
+                    | "m4a"
+                    | "aac"
+                    | "ogg"
+                    | "opus"
+                    | "wma"
+                    | "alac"
+                    | "aiff"
+                    | "aif"
+                    | "ape"
+                    | "wv"
+            )
+        })
+        .unwrap_or(false)
+}
