@@ -1,5 +1,7 @@
 pub mod about;
 mod app_state;
+mod code_preview;
+mod code_preview_ui;
 pub mod main_window;
 mod main_window_ui;
 pub mod new_queue;

@@ -12,7 +12,7 @@ log = "0.4.30"
 image = "0.25.10"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = "1.1.2"
-wxdragon = "0.9.16"
+wxdragon = { version = "0.9.16" }
 
 [build-dependencies]
 embed-manifest = "1.5.0"

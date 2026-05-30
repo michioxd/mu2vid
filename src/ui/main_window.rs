@@ -1,8 +1,10 @@
 use crate::ui::about;
 use crate::ui::app_state::{DEFAULT_PROJECT_TITLE, ProjectState};
+use crate::ui::code_preview;
 use crate::ui::main_window_ui::{
-    FrameUI, ID_FILE_NEW_PROJECT, ID_FILE_OPEN, ID_FILE_RECENT_PROJECT_START, ID_FILE_SAVE,
-    ID_FILE_SAVE_AS, MAX_RECENT_PROJECT_MENU_ITEMS, QueueItemUI, prompt_project_title,
+    FrameUI, ID_FILE_NEW_PROJECT, ID_FILE_OPEN, ID_FILE_PREVIEW_PROJECT,
+    ID_FILE_RECENT_PROJECT_START, ID_FILE_SAVE, ID_FILE_SAVE_AS, MAX_RECENT_PROJECT_MENU_ITEMS,
+    QueueItemUI, prompt_project_title,
 };
 use crate::ui::new_queue;
 use crate::{config, deps::ffmpeg, project};
@@ -293,6 +295,7 @@ fn setup_main_controls(frame_ui: &FrameUI) {
     let queue_items = Rc::new(RefCell::new(Vec::<new_queue::QueueItemDraft>::new()));
     let queue_item_uis = Rc::new(RefCell::new(Vec::<QueueItemUI>::new()));
     let project_state = ProjectState::new();
+    let is_started = Rc::new(RefCell::new(false));
 
     update_project_title_bar(frame_ui, &project_state);
     load_last_project(
@@ -302,6 +305,7 @@ fn setup_main_controls(frame_ui: &FrameUI) {
         &project_state,
         status_bar,
     );
+    update_start_stop_buttons(frame_ui, *is_started.borrow());
 
     setup_help_menu(
         frame_ui,
@@ -359,16 +363,54 @@ fn setup_main_controls(frame_ui: &FrameUI) {
         new_queue::show(status_bar, on_add);
     });
 
+    let frame_ui_for_start = frame_ui.clone();
+    let is_started_for_start = Rc::clone(&is_started);
+    frame_ui.start_button.on_click(move |_| {
+        *is_started_for_start.borrow_mut() = true;
+        update_start_stop_buttons(&frame_ui_for_start, true);
+    });
+
+    let frame_ui_for_stop = frame_ui.clone();
+    let is_started_for_stop = Rc::clone(&is_started);
+    frame_ui.stop_button.on_click(move |_| {
+        *is_started_for_stop.borrow_mut() = false;
+        update_start_stop_buttons(&frame_ui_for_stop, false);
+    });
+
     let main_frame = frame_ui.main_frame;
     let work_dir_text = frame_ui.work_dir_text;
     let frame_ui_for_work_dir = frame_ui.clone();
     let project_state_for_work_dir = project_state.clone();
+    let is_started_for_work_dir = Rc::clone(&is_started);
     frame_ui.work_dir_browse_button.on_click(move |_| {
         if let Some(folder) = choose_work_dir(&main_frame, &work_dir_text.get_value()) {
             work_dir_text.set_value(&folder);
+            update_start_stop_buttons(&frame_ui_for_work_dir, *is_started_for_work_dir.borrow());
             mark_project_dirty(&frame_ui_for_work_dir, &project_state_for_work_dir);
         }
     });
+
+    let frame_ui_for_work_dir_text = frame_ui.clone();
+    let is_started_for_work_dir_text = Rc::clone(&is_started);
+    frame_ui.work_dir_text.on_text_updated(move |_| {
+        update_start_stop_buttons(
+            &frame_ui_for_work_dir_text,
+            *is_started_for_work_dir_text.borrow(),
+        );
+    });
+}
+
+fn update_start_stop_buttons(frame_ui: &FrameUI, is_started: bool) {
+    frame_ui
+        .start_button
+        .enable(!is_started && is_valid_work_dir(&frame_ui.work_dir_text.get_value()));
+    frame_ui.stop_button.enable(is_started);
+}
+
+fn is_valid_work_dir(path: &str) -> bool {
+    let path = path.trim();
+
+    !path.is_empty() && Path::new(path).is_dir()
 }
 
 fn setup_project_menu(
@@ -400,6 +442,9 @@ fn setup_project_menu(
             save_project(&frame_ui, &queue_items, &project_state, false);
         } else if id == ID_FILE_SAVE_AS {
             save_project(&frame_ui, &queue_items, &project_state, true);
+        } else if id == ID_FILE_PREVIEW_PROJECT {
+            let project_file = build_project_file(&frame_ui, &queue_items, &project_state);
+            code_preview::show(&frame_ui.main_frame, project_file);
         } else if id == project::ID_CHANGE_TITLE {
             change_project_title(&frame_ui, &project_state);
         } else if is_recent_project_id(id) {
@@ -434,6 +479,7 @@ fn new_project(
 ) {
     clear_queue(frame_ui, queue_items, queue_item_uis);
     frame_ui.work_dir_text.set_value("");
+    update_start_stop_buttons(frame_ui, false);
     project_state.reset();
     clear_last_project_path();
     update_project_title_bar(frame_ui, project_state);
@@ -453,6 +499,7 @@ fn open_project(
         Ok(project_file) => {
             clear_queue(frame_ui, queue_items, queue_item_uis);
             frame_ui.work_dir_text.set_value(&project_file.work_dir);
+            update_start_stop_buttons(frame_ui, false);
             let title = clean_project_title(&project_file.title);
 
             for album in project_file.albums {

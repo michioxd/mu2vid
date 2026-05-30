@@ -11,7 +11,8 @@ pub const ID_FILE_NEW_PROJECT: i32 = ID_HIGHEST + 1;
 pub const ID_FILE_OPEN: i32 = ID_HIGHEST + 2;
 pub const ID_FILE_SAVE: i32 = ID_HIGHEST + 3;
 pub const ID_FILE_SAVE_AS: i32 = ID_HIGHEST + 4;
-pub const ID_FILE_RECENT_PROJECT_START: i32 = ID_HIGHEST + 20;
+pub const ID_FILE_PREVIEW_PROJECT: i32 = ID_HIGHEST + 5;
+pub const ID_FILE_RECENT_PROJECT_START: i32 = ID_HIGHEST + 21;
 pub const MAX_RECENT_PROJECT_MENU_ITEMS: usize = 10;
 const WX_LEFT: ffi::wxd_Direction_t = 0x0010;
 
@@ -21,6 +22,8 @@ pub struct FrameUI {
     pub main_status: StatusBar,
     pub main_splitter: SplitterWindow,
     pub add_queue_button: Button,
+    pub start_button: Button,
+    pub stop_button: Button,
     pub work_dir_text: TextCtrl,
     pub work_dir_browse_button: Button,
     pub main_panel: Panel,
@@ -85,6 +88,8 @@ impl FrameUI {
             main_status,
             main_splitter,
             add_queue_button: bottom_controls_ui.add_queue_button,
+            start_button: bottom_controls_ui.start_button,
+            stop_button: bottom_controls_ui.stop_button,
             work_dir_text: bottom_controls_ui.work_dir_text,
             work_dir_browse_button: bottom_controls_ui.work_dir_browse_button,
             main_panel,
@@ -325,6 +330,8 @@ struct QueuePanelUI {
 struct BottomControlsUI {
     sizer: BoxSizer,
     add_queue_button: Button,
+    start_button: Button,
+    stop_button: Button,
     work_dir_text: TextCtrl,
     work_dir_browse_button: Button,
 }
@@ -386,12 +393,15 @@ fn setup_menu_bar(frame: &Frame) {
         .append_item(ID_FILE_OPEN, "Open\tCtrl+O", "")
         .append_item(ID_FILE_SAVE, "Save\tCtrl+S", "")
         .append_item(ID_FILE_SAVE_AS, "Save as\tCtrl+Alt+S", "")
+        .append_separator()
+        .append_item(ID_FILE_PREVIEW_PROJECT, "Preview project file", "")
         .build();
     let _ = file_menu.append_submenu(recent_menu, "Recent Project", "");
     file_menu.append_separator();
     let _ = file_menu.append(ID_EXIT, "Exit", "", ItemKind::Normal);
     set_menu_item_icon(&file_menu, ID_FILE_NEW_PROJECT, ArtId::New);
     set_menu_item_icon(&file_menu, ID_FILE_OPEN, ArtId::FileOpen);
+    set_menu_item_icon(&file_menu, ID_FILE_PREVIEW_PROJECT, ArtId::ReportView);
     set_menu_item_icon(&file_menu, ID_FILE_SAVE, ArtId::FileSave);
     set_menu_item_icon(&file_menu, ID_FILE_SAVE_AS, ArtId::FileSaveAs);
     set_menu_item_icon(&file_menu, ID_EXIT, ArtId::Quit);
@@ -512,18 +522,10 @@ fn create_bottom_controls(parent: &Panel) -> BottomControlsUI {
     let bottom_controls_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     let add_queue_button = art_button(parent, "Add new queue", ArtId::New);
     bottom_controls_sizer.add(&add_queue_button, 0, SizerFlag::Right, 4);
-    bottom_controls_sizer.add(
-        &art_button(parent, "Start", ArtId::TickMark),
-        0,
-        SizerFlag::Right,
-        4,
-    );
-    bottom_controls_sizer.add(
-        &art_button(parent, "Stop", ArtId::Delete),
-        0,
-        SizerFlag::Right,
-        8,
-    );
+    let start_button = art_button(parent, "Start", ArtId::TickMark);
+    bottom_controls_sizer.add(&start_button, 0, SizerFlag::Right, 4);
+    let stop_button = art_button(parent, "Stop", ArtId::Delete);
+    bottom_controls_sizer.add(&stop_button, 0, SizerFlag::Right, 8);
 
     bottom_controls_sizer.add(
         &StaticText::builder(parent).with_label("Work dir").build(),
@@ -550,6 +552,8 @@ fn create_bottom_controls(parent: &Panel) -> BottomControlsUI {
     BottomControlsUI {
         sizer: bottom_controls_sizer,
         add_queue_button,
+        start_button,
+        stop_button,
         work_dir_text,
         work_dir_browse_button,
     }
