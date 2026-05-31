@@ -76,7 +76,7 @@ fn render_project_inner(
 
     let total_queues = request.queues.len().max(1) as u32;
     for (index, item) in request.queues.iter().enumerate() {
-        if item.render_status.is_finished() {
+        if item.render_status.is_finished() || item.skip_render {
             continue;
         }
 

@@ -330,6 +330,11 @@ fn setup_main_controls(frame_ui: &FrameUI) {
         let queue_item_uis = Rc::clone(&queue_item_uis_for_add_button);
         let project_state = project_state_for_add.clone();
         let on_add = Rc::new(move |item: new_queue::QueueItemDraft| {
+            if has_duplicate_queue_title(&queue_items.borrow(), &item.title, None) {
+                show_duplicate_queue_title_message(&frame_ui.main_frame, &item.title);
+                return false;
+            }
+
             let item_index = queue_items.borrow().len();
             let queue_item_ui = frame_ui.add_queue_item(
                 &item.title,
@@ -341,6 +346,10 @@ fn setup_main_controls(frame_ui: &FrameUI) {
             queue_item_ui
                 .progress_gauge
                 .set_value(item.progress_value());
+            queue_item_ui.skip_button.set_value(item.skip_render);
+            queue_item_ui
+                .skip_button
+                .set_label(item.skip_button_label());
             setup_queue_item_edit(
                 &frame_ui,
                 queue_item_ui,
@@ -357,6 +366,7 @@ fn setup_main_controls(frame_ui: &FrameUI) {
             queue_item_uis.borrow_mut().push(queue_item_ui);
             sync_queue_display(&frame_ui, &queue_items, &queue_item_uis);
             mark_project_dirty(&frame_ui, &project_state);
+            true
         });
 
         new_queue::show(status_bar, on_add);
@@ -677,6 +687,10 @@ fn add_queue_item_from_project(
     queue_item_ui
         .progress_gauge
         .set_value(item.progress_value());
+    queue_item_ui.skip_button.set_value(item.skip_render);
+    queue_item_ui
+        .skip_button
+        .set_label(item.skip_button_label());
     setup_queue_item_edit(
         frame_ui,
         queue_item_ui,
@@ -1051,6 +1065,42 @@ fn setup_queue_item_edit(
         mark_project_dirty(&frame_ui_for_delete, &project_state_for_delete);
     });
 
+    let frame_ui_for_skip = frame_ui.clone();
+    let queue_items_for_skip = Rc::clone(&queue_items);
+    let queue_item_uis_for_skip = Rc::clone(&queue_item_uis);
+    let project_state_for_skip = project_state.clone();
+    queue_item_ui.skip_button.on_toggle(move |_| {
+        let Some(item_index) = find_queue_item_index(&queue_item_uis_for_skip, queue_item_ui)
+        else {
+            return;
+        };
+
+        let skip_render = queue_item_ui.skip_button.get_value();
+        if let Some(item) = queue_items_for_skip.borrow_mut().get_mut(item_index) {
+            item.skip_render = skip_render;
+            queue_item_ui
+                .skip_button
+                .set_label(item.skip_button_label());
+            queue_item_ui.status_text.set_label(item.status_label());
+            queue_item_ui
+                .progress_gauge
+                .set_value(item.progress_value());
+            let status = if skip_render {
+                format!("Skipped queue: {}", item.title)
+            } else {
+                format!("Queue will render: {}", item.title)
+            };
+            frame_ui_for_skip.main_status.set_status_text(&status, 0);
+        }
+
+        sync_queue_display(
+            &frame_ui_for_skip,
+            &queue_items_for_skip,
+            &queue_item_uis_for_skip,
+        );
+        mark_project_dirty(&frame_ui_for_skip, &project_state_for_skip);
+    });
+
     let project_state_for_edit = project_state.clone();
     queue_item_ui.edit_button.on_click(move |_| {
         let Some(item_index) = find_queue_item_index(&queue_item_uis, queue_item_ui) else {
@@ -1067,6 +1117,15 @@ fn setup_queue_item_edit(
         let frame_ui = frame_ui.clone();
         let project_state = project_state_for_edit.clone();
         let on_save = Rc::new(move |updated_item: new_queue::QueueItemDraft| {
+            if has_duplicate_queue_title(
+                &queue_items.borrow(),
+                &updated_item.title,
+                Some(item_index),
+            ) {
+                show_duplicate_queue_title_message(&frame_ui.main_frame, &updated_item.title);
+                return false;
+            }
+
             if let Some(item) = queue_items.borrow_mut().get_mut(item_index) {
                 *item = updated_item.clone();
             }
@@ -1083,6 +1142,12 @@ fn setup_queue_item_edit(
             queue_item_ui
                 .progress_gauge
                 .set_value(updated_item.progress_value());
+            queue_item_ui
+                .skip_button
+                .set_value(updated_item.skip_render);
+            queue_item_ui
+                .skip_button
+                .set_label(updated_item.skip_button_label());
             frame_ui.update_queue_item_artwork(
                 queue_item_ui.cover_bitmap,
                 &updated_item.artwork_path.to_string_lossy(),
@@ -1092,6 +1157,7 @@ fn setup_queue_item_edit(
                 .set_status_text(&format!("Updated queue: {}", updated_item.title), 0);
             sync_queue_display(&frame_ui, &queue_items, &queue_item_uis);
             mark_project_dirty(&frame_ui, &project_state);
+            true
         });
 
         new_queue::show_edit(status_bar, item, on_save);
@@ -1125,11 +1191,48 @@ fn sync_queue_display(
                 item.artwork_path.to_string_lossy().to_string(),
                 item.video_quality.clone(),
                 item.audio_display_label(),
+                item.skip_render,
             )
         })
         .collect::<Vec<_>>();
 
     frame_ui.sync_queue_items(&items);
+}
+
+fn has_duplicate_queue_title(
+    queue_items: &[new_queue::QueueItemDraft],
+    title: &str,
+    exclude_index: Option<usize>,
+) -> bool {
+    let normalized_title = normalize_queue_title(title);
+    if normalized_title.is_empty() {
+        return false;
+    }
+
+    queue_items.iter().enumerate().any(|(index, item)| {
+        Some(index) != exclude_index && normalize_queue_title(&item.title) == normalized_title
+    })
+}
+
+fn normalize_queue_title(title: &str) -> String {
+    title.trim().to_lowercase()
+}
+
+fn show_duplicate_queue_title_message(parent: &Frame, title: &str) {
+    let dialog = MessageDialog::builder(
+        parent,
+        &format!(
+            "Queue title \"{}\" already exists. Please choose another title.",
+            title.trim()
+        ),
+        "Duplicate queue title",
+    )
+    .with_style(
+        MessageDialogStyle::OK | MessageDialogStyle::IconWarning | MessageDialogStyle::Centre,
+    )
+    .build();
+
+    dialog.show_modal();
 }
 
 fn confirm_remove_queue(parent: &Frame, title: &str) -> bool {

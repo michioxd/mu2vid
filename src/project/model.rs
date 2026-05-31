@@ -29,6 +29,8 @@ pub struct ProjectAlbum {
     pub audio_bitrate_kbps: u32,
     #[serde(default = "default_render_status")]
     pub render_status: String,
+    #[serde(default)]
+    pub skip_render: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_quality: Option<String>,
 }
@@ -55,6 +57,7 @@ impl From<&QueueItemDraft> for ProjectAlbum {
             audio_codec: item.audio_codec.clone(),
             audio_bitrate_kbps: item.audio_bitrate_kbps,
             render_status: item.render_status.as_str().to_string(),
+            skip_render: item.skip_render,
             audio_quality: None,
         }
     }
@@ -72,6 +75,7 @@ impl From<ProjectAlbum> for QueueItemDraft {
             audio_codec,
             audio_bitrate_kbps,
             render_status: QueueRenderStatus::from(album.render_status.as_str()),
+            skip_render: album.skip_render,
         }
     }
 }

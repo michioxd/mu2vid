@@ -42,11 +42,16 @@ pub(super) fn start_render_thread(
         *guard = Some(Arc::clone(&cancel));
     }
 
-    for (item, item_ui) in queue_items.borrow().iter().zip(queue_item_uis.borrow().iter()) {
+    for (item, item_ui) in queue_items
+        .borrow()
+        .iter()
+        .zip(queue_item_uis.borrow().iter())
+    {
         item_ui.status_text.set_label(item.status_label());
         item_ui.progress_gauge.set_value(item.progress_value());
         item_ui.edit_button.enable(false);
         item_ui.delete_button.enable(false);
+        item_ui.skip_button.enable(false);
         item_ui.up_button.enable(false);
         item_ui.down_button.enable(false);
     }
@@ -232,6 +237,7 @@ fn set_queue_actions_enabled(frame_ui: &FrameUI, queue_item_uis: &[QueueItemUI])
     for (index, item_ui) in queue_item_uis.iter().enumerate() {
         item_ui.edit_button.enable(true);
         item_ui.delete_button.enable(true);
+        item_ui.skip_button.enable(true);
         item_ui.up_button.enable(index > 0);
         item_ui.down_button.enable(index + 1 < queue_item_uis.len());
     }

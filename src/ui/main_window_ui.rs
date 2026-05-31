@@ -45,6 +45,7 @@ pub struct QueueItemUI {
     pub status_text: StaticText,
     pub progress_gauge: Gauge,
     pub cover_bitmap: StaticBitmap,
+    pub skip_button: ToggleButton,
     pub up_button: Button,
     pub down_button: Button,
     pub edit_button: Button,
@@ -167,6 +168,11 @@ impl FrameUI {
         );
 
         let actions_sizer = BoxSizer::builder(Orientation::Vertical).build();
+        let skip_button = ToggleButton::builder(&queue_item)
+            .with_label("Skip")
+            .with_size(Size::new(64, -1))
+            .build();
+        actions_sizer.add(&skip_button, 0, SizerFlag::Expand | SizerFlag::Bottom, 2);
         let move_actions_sizer = BoxSizer::builder(Orientation::Horizontal).build();
         let up_button = Button::builder(&queue_item)
             .with_label("")
@@ -216,6 +222,7 @@ impl FrameUI {
             status_text,
             progress_gauge: item_progress,
             cover_bitmap,
+            skip_button,
             up_button,
             down_button,
             edit_button,
@@ -241,10 +248,10 @@ impl FrameUI {
         self.main_frame.layout();
     }
 
-    pub fn sync_queue_items(&self, items: &[(QueueItemUI, String, String, String, String)]) {
+    pub fn sync_queue_items(&self, items: &[(QueueItemUI, String, String, String, String, bool)]) {
         self.empty_queue_panel.show(items.is_empty());
 
-        for (index, (item_ui, title, artwork_path, video_quality, audio_label)) in
+        for (index, (item_ui, title, artwork_path, video_quality, audio_label, skip_render)) in
             items.iter().enumerate()
         {
             item_ui.panel.show(true);
@@ -252,6 +259,10 @@ impl FrameUI {
             item_ui
                 .quality_text
                 .set_label(&format!("Video: {video_quality} | Audio: {audio_label}"));
+            item_ui.skip_button.set_value(*skip_render);
+            item_ui
+                .skip_button
+                .set_label(if *skip_render { "Skipped" } else { "Skip" });
             item_ui.up_button.enable(index > 0);
             item_ui.down_button.enable(index + 1 < items.len());
             self.update_queue_item_artwork(item_ui.cover_bitmap, artwork_path);

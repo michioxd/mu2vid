@@ -29,6 +29,7 @@ pub struct QueueItemDraft {
     pub audio_codec: String,
     pub audio_bitrate_kbps: u32,
     pub render_status: QueueRenderStatus,
+    pub skip_render: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,11 +47,23 @@ pub const MAX_AUDIO_BITRATE_KBPS: u32 = 512;
 
 impl QueueItemDraft {
     pub fn status_label(&self) -> &'static str {
+        if self.skip_render {
+            return "Status: skipped";
+        }
+
         self.render_status.label()
     }
 
     pub fn progress_value(&self) -> i32 {
+        if self.skip_render {
+            return 0;
+        }
+
         self.render_status.progress_value()
+    }
+
+    pub fn skip_button_label(&self) -> &'static str {
+        if self.skip_render { "Skipped" } else { "Skip" }
     }
 
     pub fn audio_display_label(&self) -> String {
@@ -115,11 +128,15 @@ impl From<&str> for QueueRenderStatus {
     }
 }
 
-pub fn show(status_bar: StatusBar, on_add: Rc<dyn Fn(QueueItemDraft)>) {
+pub fn show(status_bar: StatusBar, on_add: Rc<dyn Fn(QueueItemDraft) -> bool>) {
     show_with_initial(status_bar, None, "Add queue", on_add);
 }
 
-pub fn show_edit(status_bar: StatusBar, item: QueueItemDraft, on_save: Rc<dyn Fn(QueueItemDraft)>) {
+pub fn show_edit(
+    status_bar: StatusBar,
+    item: QueueItemDraft,
+    on_save: Rc<dyn Fn(QueueItemDraft) -> bool>,
+) {
     show_with_initial(status_bar, Some(item), "Save", on_save);
 }
 
@@ -127,7 +144,7 @@ fn show_with_initial(
     status_bar: StatusBar,
     initial_item: Option<QueueItemDraft>,
     action_label: &str,
-    on_submit: Rc<dyn Fn(QueueItemDraft)>,
+    on_submit: Rc<dyn Fn(QueueItemDraft) -> bool>,
 ) {
     if focus_open_queue_window() {
         return;
@@ -215,13 +232,14 @@ fn default_queue_item() -> QueueItemDraft {
         audio_codec: config.encoder.default_audio_encoder,
         audio_bitrate_kbps: config.encoder.default_audio_bitrate_kbps,
         render_status: QueueRenderStatus::Waiting,
+        skip_render: false,
     }
 }
 
 fn setup_events(
     queue_ui: &NewQueueUI,
     status_bar: StatusBar,
-    on_submit: Rc<dyn Fn(QueueItemDraft)>,
+    on_submit: Rc<dyn Fn(QueueItemDraft) -> bool>,
     initial_item: Option<QueueItemDraft>,
 ) {
     let load_generation = Arc::new(AtomicU64::new(0));
@@ -260,7 +278,7 @@ fn setup_events(
             return;
         }
 
-        on_submit(QueueItemDraft {
+        let submitted = on_submit(QueueItemDraft {
             album_path,
             artwork_path,
             title,
@@ -275,8 +293,14 @@ fn setup_events(
                 .as_ref()
                 .map(|item| item.render_status)
                 .unwrap_or(QueueRenderStatus::Waiting),
+            skip_render: initial_item
+                .as_ref()
+                .map(|item| item.skip_render)
+                .unwrap_or(false),
         });
-        frame.close(true);
+        if submitted {
+            frame.close(true);
+        }
     });
 
     update_audio_bitrate_controls(
