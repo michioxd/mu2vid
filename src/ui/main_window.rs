@@ -483,6 +483,8 @@ fn setup_project_menu(
             setting::show(&frame_ui.main_frame, status_bar);
         } else if id == project::ID_CHANGE_TITLE {
             change_project_title(&frame_ui, &project_state);
+        } else if id == project::ID_SKIP_YOUTUBE_UPLOAD {
+            toggle_skip_youtube_upload(&frame_ui, &project_state);
         } else if id == project::ID_RESET_QUEUE_STATUS {
             if is_started.load(Ordering::Relaxed) {
                 frame_ui
@@ -562,6 +564,7 @@ fn new_project(
     frame_ui.work_dir_text.set_value("");
     update_start_stop_buttons(frame_ui, false);
     project_state.reset();
+    sync_project_menu_state(frame_ui, project_state);
     clear_last_project_path();
     update_project_title_bar(frame_ui, project_state);
     sync_queue_display(frame_ui, queue_items, queue_item_uis);
@@ -582,6 +585,7 @@ fn open_project(
             frame_ui.work_dir_text.set_value(&project_file.work_dir);
             update_start_stop_buttons(frame_ui, false);
             let title = clean_project_title(&project_file.title);
+            let skip_youtube_upload = project_file.skip_youtube_upload;
 
             for album in project_file.albums {
                 let item = new_queue::QueueItemDraft::from(album);
@@ -595,7 +599,8 @@ fn open_project(
                 );
             }
 
-            project_state.set_clean_project(title, path.to_path_buf());
+            project_state.set_clean_project(title, path.to_path_buf(), skip_youtube_upload);
+            sync_project_menu_state(frame_ui, project_state);
             update_project_title_bar(frame_ui, project_state);
             sync_queue_display(frame_ui, queue_items, queue_item_uis);
             save_recent_project(frame_ui, path);
@@ -637,6 +642,7 @@ fn save_project(
             project_state.mark_clean_saved(path.clone());
             update_project_title_bar(frame_ui, project_state);
             save_recent_project(frame_ui, &path);
+            sync_project_menu_state(frame_ui, project_state);
             frame_ui
                 .main_status
                 .set_status_text(&format!("Saved project: {}", path.display()), 0);
@@ -665,7 +671,12 @@ fn build_project_file(
         .map(project::ProjectAlbum::from)
         .collect();
 
-    project::ProjectFile::new(title, frame_ui.work_dir_text.get_value(), albums)
+    project::ProjectFile::new(
+        title,
+        frame_ui.work_dir_text.get_value(),
+        project_state.skip_youtube_upload(),
+        albums,
+    )
 }
 
 fn add_queue_item_from_project(
@@ -795,6 +806,38 @@ fn change_project_title(frame_ui: &FrameUI, project_state: &ProjectState) {
 
     project_state.set_title(title);
     mark_project_dirty(frame_ui, project_state);
+}
+
+fn toggle_skip_youtube_upload(frame_ui: &FrameUI, project_state: &ProjectState) {
+    let skip = frame_ui
+        .main_frame
+        .get_menu_bar()
+        .map(|menu_bar| menu_bar.is_item_checked(project::ID_SKIP_YOUTUBE_UPLOAD))
+        .unwrap_or_else(|| !project_state.skip_youtube_upload());
+
+    if skip == project_state.skip_youtube_upload() {
+        return;
+    }
+
+    project_state.set_skip_youtube_upload(skip);
+    frame_ui.main_status.set_status_text(
+        if skip {
+            "YouTube upload will be skipped"
+        } else {
+            "YouTube upload enabled"
+        },
+        0,
+    );
+    mark_project_dirty(frame_ui, project_state);
+}
+
+fn sync_project_menu_state(frame_ui: &FrameUI, project_state: &ProjectState) {
+    if let Some(menu_bar) = frame_ui.main_frame.get_menu_bar() {
+        menu_bar.check_item(
+            project::ID_SKIP_YOUTUBE_UPLOAD,
+            project_state.skip_youtube_upload(),
+        );
+    }
 }
 
 fn reset_all_queue_status(

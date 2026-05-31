@@ -14,6 +14,8 @@ pub struct ProjectFile {
     pub title: String,
     pub work_dir: String,
     #[serde(default)]
+    pub skip_youtube_upload: bool,
+    #[serde(default)]
     pub albums: Vec<ProjectAlbum>,
 }
 
@@ -38,12 +40,18 @@ pub struct ProjectAlbum {
 }
 
 impl ProjectFile {
-    pub fn new(title: String, work_dir: String, albums: Vec<ProjectAlbum>) -> Self {
+    pub fn new(
+        title: String,
+        work_dir: String,
+        skip_youtube_upload: bool,
+        albums: Vec<ProjectAlbum>,
+    ) -> Self {
         Self {
             mu2vid_version: env!("CARGO_PKG_VERSION").to_string(),
             version: PROJECT_VERSION,
             title,
             work_dir,
+            skip_youtube_upload,
             albums,
         }
     }

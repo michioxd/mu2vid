@@ -444,6 +444,12 @@ fn setup_menu_bar(frame: &Frame) {
             "Change project title",
             "Change the title of the current project",
         )
+        .append_check_item(
+            project::ID_SKIP_YOUTUBE_UPLOAD,
+            "Skip YouTube upload",
+            "Do not upload rendered videos to YouTube for this project",
+        )
+        .append_separator()
         .append_item(
             project::ID_RESET_QUEUE_STATUS,
             "Reset all queue status",

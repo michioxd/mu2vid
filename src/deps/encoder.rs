@@ -20,6 +20,7 @@ use std::time::Duration;
 pub struct RenderRequest {
     pub work_dir: PathBuf,
     pub queues: Vec<QueueItemDraft>,
+    pub skip_youtube_upload: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -123,7 +124,9 @@ fn render_project_inner(
                     output_path: output_path.clone(),
                 });
 
-                if let Err(err) = upload_queue_video(item, &output_path, index, on_event) {
+                if !request.skip_youtube_upload
+                    && let Err(err) = upload_queue_video(item, &output_path, index, on_event)
+                {
                     on_event(RenderEvent::Error {
                         index: Some(index),
                         message: err.to_string(),

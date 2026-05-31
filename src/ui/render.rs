@@ -62,6 +62,11 @@ pub(super) fn start_render_thread(
     let request = encoder::RenderRequest {
         work_dir: PathBuf::from(frame_ui.work_dir_text.get_value()),
         queues: queue_items.borrow().clone(),
+        skip_youtube_upload: frame_ui
+            .main_frame
+            .get_menu_bar()
+            .map(|menu_bar| menu_bar.is_item_checked(crate::project::ID_SKIP_YOUTUBE_UPLOAD))
+            .unwrap_or(false),
     };
     let is_started_for_event = Arc::clone(&is_started);
     let cancel_render_for_event = Arc::clone(&cancel_render);
