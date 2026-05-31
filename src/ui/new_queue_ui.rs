@@ -22,6 +22,7 @@ pub struct NewQueueUI {
     pub artwork_preview_text: StaticText,
     pub artwork_info_text: StaticText,
     pub select_artwork_button: Button,
+    pub detect_artwork_button: Button,
     pub title_text: TextCtrl,
     pub description_text: TextCtrl,
     pub video_quality_choice: Choice,
@@ -122,11 +123,18 @@ impl NewQueueUI {
             BORDER,
         );
 
+        let artwork_buttons_sizer = BoxSizer::builder(Orientation::Horizontal).build();
+        let detect_artwork_button = Button::builder(&panel)
+            .with_label("Detect from audio")
+            .build();
         let select_artwork_button = Button::builder(&panel).with_label("Select artwork").build();
-        root_sizer.add(
-            &select_artwork_button,
+        artwork_buttons_sizer.add_stretch_spacer(1);
+        artwork_buttons_sizer.add(&detect_artwork_button, 0, SizerFlag::Right, GAP);
+        artwork_buttons_sizer.add(&select_artwork_button, 0, SizerFlag::AlignCenterVertical, 0);
+        root_sizer.add_sizer(
+            &artwork_buttons_sizer,
             0,
-            SizerFlag::AlignRight | SizerFlag::Right | SizerFlag::Top,
+            SizerFlag::Expand | SizerFlag::Right | SizerFlag::Top,
             BORDER,
         );
 
@@ -268,6 +276,7 @@ impl NewQueueUI {
             artwork_preview_text,
             artwork_info_text,
             select_artwork_button,
+            detect_artwork_button,
             title_text,
             description_text,
             video_quality_choice,

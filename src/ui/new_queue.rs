@@ -5,6 +5,9 @@ use crate::ui::new_queue_ui::PREVIEW_SIZE;
 use crate::ui::utils::{
     double_click_interval, format_file_size, is_audio_file, is_cover_artwork, open_file_location,
 };
+use anyhow::{Context, Result as AnyhowResult, anyhow};
+use lofty::file::TaggedFileExt;
+use lofty::picture::PictureType;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -410,8 +413,6 @@ fn setup_events(
         }
     });
 
-    let frame = queue_ui.frame;
-
     fn show_no_audio_files_message(parent: &Frame) {
         let dialog = MessageDialog::builder(
             parent,
@@ -425,6 +426,47 @@ fn setup_events(
 
         dialog.show_modal();
     }
+
+    let frame = queue_ui.frame;
+    let album_path_text = queue_ui.album_path_text;
+    let artwork_preview_bitmap = queue_ui.artwork_preview_bitmap;
+    let artwork_preview_text = queue_ui.artwork_preview_text;
+    let artwork_info_text = queue_ui.artwork_info_text;
+    let add_button = queue_ui.add_button;
+    let title_text = queue_ui.title_text;
+    let detect_load_generation = Arc::clone(&load_generation);
+    let selected_artwork = Rc::clone(&selected_artwork_path);
+    queue_ui.detect_artwork_button.on_click(move |_| {
+        let album_path = album_path_text.get_value();
+        let folder = PathBuf::from(album_path.trim());
+        if folder.as_os_str().is_empty() || !folder.is_dir() {
+            show_detect_artwork_message(&frame, "Please choose an album folder first.");
+            return;
+        }
+
+        let Some(audio_path) = find_first_audio_file(&folder) else {
+            show_no_audio_files_message(&frame);
+            return;
+        };
+
+        match extract_embedded_artwork(&audio_path, &folder) {
+            Ok(artwork_path) => {
+                *selected_artwork.borrow_mut() = Some(artwork_path.clone());
+                update_artwork_info(&artwork_info_text, &artwork_path);
+                update_create_button(add_button, album_path_text, title_text, &selected_artwork);
+                status_bar.set_status_text("Detected artwork from audio", 0);
+                load_artwork_preview_async(
+                    artwork_preview_bitmap,
+                    artwork_preview_text,
+                    status_bar,
+                    artwork_path,
+                    Arc::clone(&detect_load_generation),
+                );
+            }
+            Err(error) => show_detect_artwork_message(&frame, &error.to_string()),
+        }
+    });
+
     let album_path_text = queue_ui.album_path_text;
     let artwork_preview_bitmap = queue_ui.artwork_preview_bitmap;
     let artwork_preview_text = queue_ui.artwork_preview_text;
@@ -587,6 +629,54 @@ fn find_cover_artwork(folder: &Path) -> Option<PathBuf> {
             .map(|name| name.to_string_lossy().to_lowercase())
     });
     candidates.into_iter().next()
+}
+
+fn find_first_audio_file(folder: &Path) -> Option<PathBuf> {
+    let mut candidates = std::fs::read_dir(folder)
+        .ok()?
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && is_audio_file(path))
+        .collect::<Vec<_>>();
+
+    candidates.sort_by_key(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+    });
+    candidates.into_iter().next()
+}
+
+fn extract_embedded_artwork(audio_path: &Path, folder: &Path) -> AnyhowResult<PathBuf> {
+    let tagged_file = lofty::read_from_path(audio_path)
+        .with_context(|| format!("Cannot read metadata: {}", audio_path.display()))?;
+    let tag = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag())
+        .ok_or_else(|| anyhow!("No metadata tag found in the first audio file."))?;
+    let picture = tag
+        .get_picture_type(PictureType::CoverFront)
+        .or_else(|| tag.pictures().first())
+        .ok_or_else(|| anyhow!("No embedded artwork found in the first audio file."))?;
+    let extension = picture
+        .mime_type()
+        .and_then(|mime_type| mime_type.ext())
+        .unwrap_or("jpg");
+    let artwork_path = folder.join(format!("mu2vid-detected-artwork.{extension}"));
+
+    std::fs::write(&artwork_path, picture.data())
+        .with_context(|| format!("Cannot save detected artwork: {}", artwork_path.display()))?;
+
+    Ok(artwork_path)
+}
+
+fn show_detect_artwork_message(parent: &Frame, message: &str) {
+    let dialog = MessageDialog::builder(parent, message, "Cannot detect artwork")
+        .with_style(
+            MessageDialogStyle::OK | MessageDialogStyle::IconWarning | MessageDialogStyle::Centre,
+        )
+        .build();
+
+    dialog.show_modal();
 }
 
 fn load_artwork_preview_async(
