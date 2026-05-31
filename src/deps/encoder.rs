@@ -2,6 +2,7 @@ use crate::config;
 use crate::media::thumbnail;
 use crate::ui::new_queue::{ORIGINAL_AUDIO_CODEC, QueueItemDraft};
 use crate::ui::utils::is_audio_file;
+use crate::youtube::{oauth, token, upload};
 use anyhow::{Context, Result};
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::prelude::Accessor;
@@ -36,6 +37,19 @@ pub enum RenderEvent {
         index: usize,
         output_path: PathBuf,
     },
+    UploadStarted {
+        index: usize,
+        title: String,
+    },
+    UploadProgress {
+        index: usize,
+        uploaded: u64,
+        total: u64,
+    },
+    UploadFinished {
+        index: usize,
+        video_id: Option<String>,
+    },
     Finished,
     Cancelled,
     Error {
@@ -52,6 +66,11 @@ struct TrackInfo {
     artist: String,
     title: String,
     duration: Duration,
+}
+
+enum UploadMessage {
+    Progress(u64, u64),
+    Finished(Result<Option<String>>),
 }
 
 pub fn render_project(
@@ -98,7 +117,20 @@ fn render_project_inner(
             &cancel,
             on_event,
         ) {
-            Ok(output_path) => on_event(RenderEvent::QueueFinished { index, output_path }),
+            Ok(output_path) => {
+                on_event(RenderEvent::QueueFinished {
+                    index,
+                    output_path: output_path.clone(),
+                });
+
+                if let Err(err) = upload_queue_video(item, &output_path, index, on_event) {
+                    on_event(RenderEvent::Error {
+                        index: Some(index),
+                        message: err.to_string(),
+                    });
+                    return Ok(());
+                }
+            }
             Err(err) => {
                 on_event(RenderEvent::Error {
                     index: Some(index),
@@ -209,6 +241,119 @@ fn render_queue(
         total_percent: (((index as u32) + 1) * 100) / total_queues,
     });
     Ok(output_path)
+}
+
+fn upload_queue_video(
+    item: &QueueItemDraft,
+    output_path: &Path,
+    index: usize,
+    on_event: &mut impl FnMut(RenderEvent),
+) -> Result<()> {
+    let mut config = config::load();
+    if config.youtube.client_id.trim().is_empty()
+        || config.youtube.client_secret.trim().is_empty()
+        || config.youtube.refresh_token.is_none()
+    {
+        return Ok(());
+    }
+
+    on_event(RenderEvent::UploadStarted {
+        index,
+        title: item.title.clone(),
+    });
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let output_path = output_path.to_path_buf();
+    let title = item.title.clone();
+    let description = rendered_description(item, &output_path)?;
+    let thumbnail_path = output_path
+        .parent()
+        .context("Missing rendered output folder")?
+        .join("thumbnail.jpg");
+
+    std::thread::spawn(move || {
+        let result = (|| -> Result<Option<String>> {
+            let runtime =
+                tokio::runtime::Runtime::new().context("Cannot start YouTube upload runtime")?;
+            let access_token = runtime.block_on(valid_access_token(&mut config))?;
+            let progress_tx = tx.clone();
+            let upload_response = runtime.block_on(upload::upload_video_resumable(
+                &access_token,
+                &output_path,
+                &title,
+                &description,
+                "private",
+                move |uploaded, total| {
+                    let _ = progress_tx.send(UploadMessage::Progress(uploaded, total));
+                },
+            ))?;
+            if let Some(video_id) = upload_response.id.as_deref() {
+                runtime.block_on(upload::upload_thumbnail(
+                    &access_token,
+                    video_id,
+                    &thumbnail_path,
+                ))?;
+            }
+            Ok(upload_response.id)
+        })();
+
+        let _ = tx.send(UploadMessage::Finished(result));
+    });
+
+    while let Ok(message) = rx.recv() {
+        match message {
+            UploadMessage::Progress(uploaded, total) => on_event(RenderEvent::UploadProgress {
+                index,
+                uploaded,
+                total,
+            }),
+            UploadMessage::Finished(result) => {
+                let video_id = result?;
+                on_event(RenderEvent::UploadFinished { index, video_id });
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn rendered_description(item: &QueueItemDraft, output_path: &Path) -> Result<String> {
+    let timestamps_path = output_path
+        .parent()
+        .context("Missing rendered output folder")?
+        .join("timestamps.txt");
+    let timestamps = fs::read_to_string(&timestamps_path)
+        .with_context(|| format!("Cannot read timestamps: {}", timestamps_path.display()))?;
+
+    Ok(item.description.replace("{{timestamp}}", &timestamps))
+}
+
+async fn valid_access_token(config: &mut config::AppConfig) -> Result<String> {
+    if let Some(access_token) = config.youtube.access_token.clone()
+        && !token::is_access_token_expired(config.youtube.expires_at)
+    {
+        return Ok(access_token);
+    }
+
+    let refresh_token = config
+        .youtube
+        .refresh_token
+        .clone()
+        .context("Missing YouTube refresh token")?;
+    let token = oauth::refresh_access_token(
+        &config.youtube.client_id,
+        &config.youtube.client_secret,
+        &refresh_token,
+    )
+    .await?;
+
+    config.youtube.access_token = Some(token.access_token.clone());
+    config.youtube.refresh_token = token.refresh_token;
+    config.youtube.expires_at = token.expires_at;
+    config::save(config).context("Failed to save refreshed YouTube token")?;
+
+    Ok(token.access_token)
 }
 
 fn scan_tracks(album_path: &Path) -> Result<Vec<TrackInfo>> {

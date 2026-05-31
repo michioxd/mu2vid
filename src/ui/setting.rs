@@ -4,6 +4,7 @@ use crate::ui::new_queue::{
     MAX_AUDIO_BITRATE_KBPS, MIN_AUDIO_BITRATE_KBPS, ORIGINAL_AUDIO_CODEC, clamp_audio_bitrate,
 };
 use crate::ui::setting_ui::SettingUI;
+use crate::youtube::oauth;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -95,6 +96,15 @@ fn setup_initial_values(setting_ui: &SettingUI, system_supported: bool) {
         setting_ui.audio_bitrate_slider,
         setting_ui.audio_bitrate_label,
     );
+    setting_ui
+        .youtube_client_id_text
+        .set_value(&config.youtube.client_id);
+    setting_ui
+        .youtube_client_secret_text
+        .set_value(&config.youtube.client_secret);
+    setting_ui
+        .youtube_redirect_uri_text
+        .set_value(&config.youtube.redirect_uri);
 
     setting_ui.video_encoder_choice.append(
         config
@@ -146,6 +156,11 @@ fn setup_events(setting_ui: &SettingUI, status_bar: StatusBar) {
         );
     });
 
+    let login_ui = setting_ui.clone();
+    setting_ui.youtube_login_button.on_click(move |_| {
+        login_youtube(&login_ui, status_bar);
+    });
+
     let audio_bitrate_slider = setting_ui.audio_bitrate_slider;
     let audio_bitrate_label = setting_ui.audio_bitrate_label;
     let apply_button = setting_ui.apply_button;
@@ -172,6 +187,21 @@ fn setup_events(setting_ui: &SettingUI, status_bar: StatusBar) {
     );
     bind_dirty_radio(
         setting_ui.appearance_radio,
+        setting_ui.apply_button,
+        Rc::clone(&dirty),
+    );
+    bind_dirty_text(
+        setting_ui.youtube_client_id_text,
+        setting_ui.apply_button,
+        Rc::clone(&dirty),
+    );
+    bind_dirty_text(
+        setting_ui.youtube_client_secret_text,
+        setting_ui.apply_button,
+        Rc::clone(&dirty),
+    );
+    bind_dirty_text(
+        setting_ui.youtube_redirect_uri_text,
         setting_ui.apply_button,
         Rc::clone(&dirty),
     );
@@ -225,6 +255,12 @@ fn bind_dirty_choice(choice: Choice, apply_button: Button, dirty: Rc<RefCell<boo
 
 fn bind_dirty_radio(radio: RadioBox, apply_button: Button, dirty: Rc<RefCell<bool>>) {
     radio.on_selected(move |_| {
+        mark_dirty(&dirty, apply_button);
+    });
+}
+
+fn bind_dirty_text(text: TextCtrl, apply_button: Button, dirty: Rc<RefCell<bool>>) {
+    text.on_text_updated(move |_| {
         mark_dirty(&dirty, apply_button);
     });
 }
@@ -371,6 +407,13 @@ fn apply_settings(setting_ui: &SettingUI, valid_ffmpeg: &Arc<AtomicBool>) -> boo
         .unwrap_or_else(|| ORIGINAL_AUDIO_CODEC.to_string());
     config.encoder.default_audio_bitrate_kbps =
         clamp_audio_bitrate(setting_ui.audio_bitrate_slider.get_value() as u32);
+    config.youtube.client_id = setting_ui.youtube_client_id_text.get_value().trim().to_string();
+    config.youtube.client_secret = setting_ui
+        .youtube_client_secret_text
+        .get_value()
+        .trim()
+        .to_string();
+    config.youtube.redirect_uri = normalized_redirect_uri(&setting_ui.youtube_redirect_uri_text.get_value());
 
     match config::save(&config) {
         Ok(()) => true,
@@ -381,6 +424,96 @@ fn apply_settings(setting_ui: &SettingUI, valid_ffmpeg: &Arc<AtomicBool>) -> boo
             );
             false
         }
+    }
+}
+
+fn login_youtube(setting_ui: &SettingUI, status_bar: StatusBar) {
+    let client_id = setting_ui.youtube_client_id_text.get_value().trim().to_string();
+    let client_secret = setting_ui
+        .youtube_client_secret_text
+        .get_value()
+        .trim()
+        .to_string();
+    let redirect_uri = normalized_redirect_uri(&setting_ui.youtube_redirect_uri_text.get_value());
+
+    if client_id.is_empty() || client_secret.is_empty() {
+        show_settings_error(&setting_ui.frame, "Set YouTube Client ID and Client secret first.");
+        return;
+    }
+
+    let auth_url = oauth::build_auth_url(&client_id, &redirect_uri);
+    let _ = webbrowser::open(&auth_url);
+
+    let dialog = TextEntryDialog::builder(
+        &setting_ui.frame,
+        "Paste the full Google redirect URL after consent.",
+        "YouTube login",
+    )
+    .build();
+
+    if dialog.show_modal() != ID_OK {
+        status_bar.set_status_text("YouTube login cancelled", 0);
+        return;
+    }
+
+    let redirect_url = dialog.get_value().unwrap_or_default();
+    let code = match oauth::parse_code_from_redirect_url(&redirect_url) {
+        Ok(code) => code,
+        Err(err) => {
+            show_settings_error(&setting_ui.frame, &format!("Invalid redirect URL.\n\n{err}"));
+            return;
+        }
+    };
+
+    setting_ui.youtube_login_button.enable(false);
+    status_bar.set_status_text("Logging in to YouTube...", 0);
+
+    let login_button = setting_ui.youtube_login_button;
+    std::thread::spawn(move || {
+        let result = exchange_youtube_code(client_id, client_secret, redirect_uri, code);
+        wxdragon::call_after(Box::new(move || {
+            login_button.enable(true);
+            match result {
+                Ok(()) => status_bar.set_status_text("YouTube login saved", 0),
+                Err(err) => status_bar.set_status_text(&format!("YouTube login failed: {err}"), 0),
+            }
+        }));
+    });
+}
+
+fn exchange_youtube_code(
+    client_id: String,
+    client_secret: String,
+    redirect_uri: String,
+    code: String,
+) -> anyhow::Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let oauth_token = runtime.block_on(oauth::exchange_code_for_token(
+        &client_id,
+        &client_secret,
+        &redirect_uri,
+        &code,
+    ))?;
+
+    let mut config = config::load();
+    config.youtube.client_id = client_id;
+    config.youtube.client_secret = client_secret;
+    config.youtube.redirect_uri = redirect_uri;
+    config.youtube.access_token = Some(oauth_token.access_token);
+    if oauth_token.refresh_token.is_some() {
+        config.youtube.refresh_token = oauth_token.refresh_token;
+    }
+    config.youtube.expires_at = oauth_token.expires_at;
+    config::save(&config)?;
+    Ok(())
+}
+
+fn normalized_redirect_uri(value: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        "http://localhost".to_string()
+    } else {
+        value.to_string()
     }
 }
 

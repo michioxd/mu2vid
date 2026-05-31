@@ -5,6 +5,7 @@ mod deps;
 mod media;
 mod project;
 mod ui;
+mod youtube;
 
 fn main() {
     config::storage::load();

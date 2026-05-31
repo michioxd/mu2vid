@@ -22,6 +22,8 @@ pub struct ProjectAlbum {
     pub album_path: String,
     pub artwork_path: String,
     pub title: String,
+    #[serde(default)]
+    pub description: String,
     pub video_quality: String,
     #[serde(default = "default_audio_codec")]
     pub audio_codec: String,
@@ -53,6 +55,7 @@ impl From<&QueueItemDraft> for ProjectAlbum {
             album_path: item.album_path.clone(),
             artwork_path: item.artwork_path.to_string_lossy().to_string(),
             title: item.title.clone(),
+            description: item.description.clone(),
             video_quality: item.video_quality.clone(),
             audio_codec: item.audio_codec.clone(),
             audio_bitrate_kbps: item.audio_bitrate_kbps,
@@ -71,6 +74,7 @@ impl From<ProjectAlbum> for QueueItemDraft {
             album_path: album.album_path,
             artwork_path: PathBuf::from(album.artwork_path),
             title: album.title,
+            description: album.description,
             video_quality: album.video_quality,
             audio_codec,
             audio_bitrate_kbps,

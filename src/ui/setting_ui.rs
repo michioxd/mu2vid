@@ -4,9 +4,9 @@ use wxdragon::prelude::*;
 use wxdragon::sizers::StaticBoxSizerBuilder;
 
 const WINDOW_WIDTH: i32 = 560;
-const WINDOW_HEIGHT: i32 = 520;
+const WINDOW_HEIGHT: i32 = 655;
 const MIN_WINDOW_WIDTH: i32 = 520;
-const MIN_WINDOW_HEIGHT: i32 = 480;
+const MIN_WINDOW_HEIGHT: i32 = 640;
 const FIELD_HEIGHT: i32 = 26;
 const BORDER: i32 = 12;
 const GAP: i32 = 8;
@@ -26,6 +26,10 @@ pub struct SettingUI {
     pub audio_encoder_choice: Choice,
     pub audio_bitrate_slider: Slider,
     pub audio_bitrate_label: StaticText,
+    pub youtube_client_id_text: TextCtrl,
+    pub youtube_client_secret_text: TextCtrl,
+    pub youtube_redirect_uri_text: TextCtrl,
+    pub youtube_login_button: Button,
     pub ok_button: Button,
     pub cancel_button: Button,
     pub apply_button: Button,
@@ -223,7 +227,26 @@ impl SettingUI {
         );
         root_sizer.add_sizer(
             &encoder_sizer,
-            1,
+            0,
+            SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+            BORDER,
+        );
+
+        let youtube_sizer =
+            StaticBoxSizerBuilder::new_with_label(Orientation::Vertical, &panel, "YouTube").build();
+        let youtube_client_id_text = add_labeled_text(&panel, &youtube_sizer, "Client ID");
+        let youtube_client_secret_text = add_labeled_text(&panel, &youtube_sizer, "Client secret");
+        let youtube_redirect_uri_text = add_labeled_text(&panel, &youtube_sizer, "Redirect URI");
+        let youtube_login_button = Button::builder(&panel).with_label("Login YouTube").build();
+        youtube_sizer.add(
+            &youtube_login_button,
+            0,
+            SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+            GAP,
+        );
+        root_sizer.add_sizer(
+            &youtube_sizer,
+            0,
             SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
             BORDER,
         );
@@ -277,11 +300,34 @@ impl SettingUI {
             audio_encoder_choice,
             audio_bitrate_slider,
             audio_bitrate_label,
+            youtube_client_id_text,
+            youtube_client_secret_text,
+            youtube_redirect_uri_text,
+            youtube_login_button,
             ok_button,
             cancel_button,
             apply_button,
         }
     }
+}
+
+fn add_labeled_text(parent: &Panel, sizer: &StaticBoxSizer, label: &str) -> TextCtrl {
+    sizer.add(
+        &StaticText::builder(parent).with_label(label).build(),
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        GAP,
+    );
+    let text = TextCtrl::builder(parent)
+        .with_size(Size::new(-1, FIELD_HEIGHT))
+        .build();
+    sizer.add(
+        &text,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        GAP,
+    );
+    text
 }
 
 fn video_quality_choices() -> Vec<String> {

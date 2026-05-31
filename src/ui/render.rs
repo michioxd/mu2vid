@@ -161,6 +161,45 @@ fn handle_render_event(
                 .main_status
                 .set_status_text(&format!("Rendered: {}", output_path.display()), 0);
         }
+        encoder::RenderEvent::UploadStarted { index, title } => {
+            if let Some(item_ui) = queue_item_uis.get(index) {
+                item_ui.status_text.set_label("Status: uploading");
+                item_ui.progress_gauge.set_value(0);
+            }
+            frame_ui
+                .main_status
+                .set_status_text(&format!("Uploading to YouTube: {title}"), 0);
+        }
+        encoder::RenderEvent::UploadProgress {
+            index,
+            uploaded,
+            total,
+        } => {
+            let percent = if total == 0 {
+                0
+            } else {
+                ((uploaded.saturating_mul(100)) / total).min(100) as i32
+            };
+            if let Some(item_ui) = queue_item_uis.get(index) {
+                item_ui.progress_gauge.set_value(percent);
+                item_ui
+                    .status_text
+                    .set_label(&format!("Status: uploading {percent}%"));
+            }
+            frame_ui
+                .main_status
+                .set_status_text(&format!("YouTube upload progress: {percent}%"), 0);
+        }
+        encoder::RenderEvent::UploadFinished { index, video_id } => {
+            if let Some(item_ui) = queue_item_uis.get(index) {
+                item_ui.status_text.set_label("Status: uploaded");
+                item_ui.progress_gauge.set_value(100);
+            }
+            let status = video_id
+                .map(|id| format!("Uploaded to YouTube: {id}"))
+                .unwrap_or_else(|| "Uploaded to YouTube".to_string());
+            frame_ui.main_status.set_status_text(&status, 0);
+        }
         encoder::RenderEvent::Finished => {
             frame_ui.total_progress_gauge.set_value(100);
             finish_render(

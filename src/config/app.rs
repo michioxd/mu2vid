@@ -6,6 +6,7 @@ pub struct AppConfig {
     pub ffmpeg_path: Option<String>,
     pub appearance: AppearanceConfig,
     pub encoder: EncoderConfig,
+    pub youtube: YoutubeConfig,
     pub window: WindowConfig,
     pub recent_projects: Vec<String>,
     pub last_project_path: Option<String>,
@@ -30,6 +31,17 @@ pub struct EncoderConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct YoutubeConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: String,
+    pub access_token: Option<String>,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WindowConfig {
     pub x: Option<i32>,
     pub y: Option<i32>,
@@ -45,6 +57,7 @@ impl Default for AppConfig {
             ffmpeg_path: None,
             appearance: AppearanceConfig::default(),
             encoder: EncoderConfig::default(),
+            youtube: YoutubeConfig::default(),
             window: WindowConfig::default(),
             recent_projects: Vec::new(),
             last_project_path: None,
@@ -65,6 +78,19 @@ impl Default for EncoderConfig {
             default_video_quality: "1080p".to_string(),
             default_audio_encoder: "aac".to_string(),
             default_audio_bitrate_kbps: 320,
+        }
+    }
+}
+
+impl Default for YoutubeConfig {
+    fn default() -> Self {
+        Self {
+            client_id: String::new(),
+            client_secret: String::new(),
+            redirect_uri: "http://localhost".to_string(),
+            access_token: None,
+            refresh_token: None,
+            expires_at: None,
         }
     }
 }
