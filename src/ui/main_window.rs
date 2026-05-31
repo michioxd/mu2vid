@@ -25,6 +25,7 @@ const FALLBACK_SCREEN_WIDTH: i32 = 1920;
 const FALLBACK_SCREEN_HEIGHT: i32 = 1080;
 const MIN_SPLITTER_SASH_POSITION: i32 = 240;
 const ID_QUIT_WITHOUT_SAVE: i32 = project::ID_CHANGE_TITLE + 1;
+const ID_DISCARD_WITHOUT_SAVE: i32 = ID_QUIT_WITHOUT_SAVE + 1;
 
 pub fn show() {
     let dark_mode = setting::apply_configured_appearance();
@@ -411,7 +412,11 @@ fn setup_project_menu(
         let id = event.get_id();
 
         if id == ID_FILE_NEW_PROJECT {
-            new_project(&frame_ui, &queue_items, &queue_item_uis, &project_state);
+            if confirm_new_project_if_dirty(&frame_ui, &project_state, &queue_items, status_bar) {
+                new_project(&frame_ui, &queue_items, &queue_item_uis, &project_state);
+            } else {
+                event.skip(false);
+            }
         } else if id == ID_FILE_OPEN {
             if let Some(path) = choose_project_file(&frame_ui.main_frame) {
                 open_project(
@@ -456,6 +461,42 @@ fn setup_project_menu(
 fn is_recent_project_id(id: i32) -> bool {
     id >= ID_FILE_RECENT_PROJECT_START
         && id < ID_FILE_RECENT_PROJECT_START + MAX_RECENT_PROJECT_MENU_ITEMS as i32
+}
+
+fn confirm_new_project_if_dirty(
+    frame_ui: &FrameUI,
+    project_state: &ProjectState,
+    queue_items: &Rc<RefCell<Vec<new_queue::QueueItemDraft>>>,
+    status_bar: StatusBar,
+) -> bool {
+    if !project_state.is_dirty() {
+        return true;
+    }
+
+    match show_unsaved_new_project_dialog(&frame_ui.main_frame) {
+        ID_CANCEL => false,
+        ID_DISCARD_WITHOUT_SAVE => {
+            project_state.clear_dirty();
+            update_project_title_bar(frame_ui, project_state);
+            true
+        }
+        ID_OK => save_project(frame_ui, queue_items, project_state, false),
+        _ => {
+            status_bar.set_status_text("New project cancelled", 0);
+            false
+        }
+    }
+}
+
+fn show_unsaved_new_project_dialog(parent: &Frame) -> i32 {
+    show_unsaved_action_dialog(
+        parent,
+        "Unsaved project",
+        "Current project has unsaved changes. Save it before creating a new project?",
+        "Save then new project",
+        "Don't save",
+        ID_DISCARD_WITHOUT_SAVE,
+    )
 }
 
 fn new_project(
@@ -779,12 +820,28 @@ fn confirm_quit_if_dirty(
 }
 
 fn show_unsaved_project_dialog(parent: &Frame) -> i32 {
-    let dialog = Dialog::builder(parent, "Unsaved project").build();
+    show_unsaved_action_dialog(
+        parent,
+        "Unsaved project",
+        "Unsaved project, do you want to quit?",
+        "Save then quit",
+        "Quit",
+        ID_QUIT_WITHOUT_SAVE,
+    )
+}
+
+fn show_unsaved_action_dialog(
+    parent: &Frame,
+    title: &str,
+    message: &str,
+    save_label: &str,
+    discard_label: &str,
+    discard_id: i32,
+) -> i32 {
+    let dialog = Dialog::builder(parent, title).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-    let message = StaticText::builder(&dialog)
-        .with_label("Unsaved project, do you want to quit?")
-        .build();
+    let message = StaticText::builder(&dialog).with_label(message).build();
     sizer.add(&message, 0, SizerFlag::Expand | SizerFlag::All, 12);
 
     let button_sizer = BoxSizer::builder(Orientation::Horizontal).build();
@@ -793,12 +850,12 @@ fn show_unsaved_project_dialog(parent: &Frame) -> i32 {
         .with_label("Cancel")
         .build();
     let quit_button = Button::builder(&dialog)
-        .with_id(ID_QUIT_WITHOUT_SAVE)
-        .with_label("Quit")
+        .with_id(discard_id)
+        .with_label(discard_label)
         .build();
     let save_button = Button::builder(&dialog)
         .with_id(ID_OK)
-        .with_label("Save then quit")
+        .with_label(save_label)
         .build();
 
     let dialog_for_cancel = dialog;
@@ -807,7 +864,7 @@ fn show_unsaved_project_dialog(parent: &Frame) -> i32 {
     });
     let dialog_for_quit = dialog;
     quit_button.on_click(move |_| {
-        dialog_for_quit.end_modal(ID_QUIT_WITHOUT_SAVE);
+        dialog_for_quit.end_modal(discard_id);
     });
     let dialog_for_save = dialog;
     save_button.on_click(move |_| {
