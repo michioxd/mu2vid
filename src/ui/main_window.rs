@@ -12,7 +12,6 @@ use crate::{config, deps::ffmpeg, project};
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use wxdragon::appearance::is_system_dark_mode;
 // use wxdragon::event::EventType;
 use wxdragon::geometry::{Point, Rect, Size};
 use wxdragon::id::{ID_ABOUT, ID_CANCEL, ID_EXIT, ID_OK, ID_YES};
@@ -42,7 +41,7 @@ pub fn show() {
         .main_frame
         .set_min_size(Size::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT));
     frame_ui.main_frame.layout();
-    frame_ui.apply_colors(dark_mode || is_system_dark_mode());
+    frame_ui.apply_colors(dark_mode);
     setup_status_bar(&frame_ui);
     setup_main_controls(&frame_ui);
     // setup_system_theme_watcher(&frame_ui);

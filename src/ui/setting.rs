@@ -35,7 +35,13 @@ pub fn show(parent: &Frame, status_bar: StatusBar) {
 
 pub fn apply_configured_appearance() -> bool {
     let config = config::load();
-    apply_appearance(config.appearance).unwrap_or(false)
+    let _ = apply_appearance(config.appearance);
+
+    match config.appearance {
+        AppearanceConfig::Dark => true,
+        AppearanceConfig::Light => false,
+        AppearanceConfig::System => wxdragon::appearance::is_system_dark_mode(),
+    }
 }
 
 fn focus_open_setting_window() -> bool {

@@ -118,7 +118,7 @@ impl SettingUI {
             GAP,
         );
         let ffmpeg_status_text = StaticText::builder(&panel)
-            .with_label("FFmpeg status will be shown here.")
+            .with_label("Click Validate to check FFmpeg status and get available encoders.")
             .build();
         encoder_sizer.add(
             &ffmpeg_status_text,
