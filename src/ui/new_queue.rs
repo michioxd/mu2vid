@@ -20,7 +20,7 @@ thread_local! {
     static OPEN_QUEUE_FRAME: RefCell<Option<Frame>> = const { RefCell::new(None) };
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct QueueItemDraft {
     pub album_path: String,
     pub artwork_path: PathBuf,
@@ -28,6 +28,14 @@ pub struct QueueItemDraft {
     pub video_quality: String,
     pub audio_codec: String,
     pub audio_bitrate_kbps: u32,
+    pub render_status: QueueRenderStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueRenderStatus {
+    Waiting,
+    Finished,
+    Error,
 }
 
 pub const ORIGINAL_AUDIO_CODEC: &str = "original";
@@ -37,6 +45,14 @@ pub const MIN_AUDIO_BITRATE_KBPS: u32 = 64;
 pub const MAX_AUDIO_BITRATE_KBPS: u32 = 512;
 
 impl QueueItemDraft {
+    pub fn status_label(&self) -> &'static str {
+        self.render_status.label()
+    }
+
+    pub fn progress_value(&self) -> i32 {
+        self.render_status.progress_value()
+    }
+
     pub fn audio_display_label(&self) -> String {
         if self.audio_codec == ORIGINAL_AUDIO_CODEC {
             ORIGINAL_AUDIO_CODEC.to_string()
@@ -56,6 +72,45 @@ impl QueueItemDraft {
                 "-b:a".to_string(),
                 format!("{}k", self.audio_bitrate_kbps),
             ]
+        }
+    }
+}
+
+impl QueueRenderStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Waiting => "waiting",
+            Self::Finished => "finished",
+            Self::Error => "error",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Waiting => "Status: waiting",
+            Self::Finished => "Status: finished",
+            Self::Error => "Status: error",
+        }
+    }
+
+    pub fn progress_value(self) -> i32 {
+        match self {
+            Self::Finished => 100,
+            Self::Waiting | Self::Error => 0,
+        }
+    }
+
+    pub fn is_finished(self) -> bool {
+        self == Self::Finished
+    }
+}
+
+impl From<&str> for QueueRenderStatus {
+    fn from(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "finished" => Self::Finished,
+            "error" => Self::Error,
+            _ => Self::Waiting,
         }
     }
 }
@@ -159,6 +214,7 @@ fn default_queue_item() -> QueueItemDraft {
         video_quality: config.encoder.default_video_quality,
         audio_codec: config.encoder.default_audio_encoder,
         audio_bitrate_kbps: config.encoder.default_audio_bitrate_kbps,
+        render_status: QueueRenderStatus::Waiting,
     }
 }
 
@@ -215,6 +271,10 @@ fn setup_events(
                 .get_string_selection()
                 .unwrap_or_else(|| DEFAULT_AUDIO_CODEC.to_string()),
             audio_bitrate_kbps: clamp_audio_bitrate(audio_bitrate_slider.get_value() as u32),
+            render_status: initial_item
+                .as_ref()
+                .map(|item| item.render_status)
+                .unwrap_or(QueueRenderStatus::Waiting),
         });
         frame.close(true);
     });

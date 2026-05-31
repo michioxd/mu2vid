@@ -21,6 +21,7 @@ const WX_LEFT: ffi::wxd_Direction_t = 0x0010;
 pub struct FrameUI {
     pub main_frame: Frame,
     pub main_status: StatusBar,
+    pub total_progress_gauge: Gauge,
     pub main_splitter: SplitterWindow,
     pub add_queue_button: Button,
     pub start_button: Button,
@@ -41,6 +42,8 @@ pub struct QueueItemUI {
     pub panel: Panel,
     pub title_text: StaticText,
     pub quality_text: StaticText,
+    pub status_text: StaticText,
+    pub progress_gauge: Gauge,
     pub cover_bitmap: StaticBitmap,
     pub up_button: Button,
     pub down_button: Button,
@@ -61,6 +64,12 @@ impl FrameUI {
             .with_status_widths(vec![-1, 240])
             .add_initial_text(0, "Ready")
             .build();
+        let total_progress_gauge = Gauge::builder(&main_status)
+            .with_style(GaugeStyle::Default)
+            .with_size(Size::new(220, 18))
+            .with_range(100)
+            .build();
+        total_progress_gauge.set_value(0);
 
         let main_panel = Panel::builder(&main_frame).build();
         let main_sizer = BoxSizer::builder(Orientation::Vertical).build();
@@ -87,6 +96,7 @@ impl FrameUI {
         Self {
             main_frame,
             main_status,
+            total_progress_gauge,
             main_splitter,
             add_queue_button: bottom_controls_ui.add_queue_button,
             start_button: bottom_controls_ui.start_button,
@@ -138,15 +148,15 @@ impl FrameUI {
             .with_label(&format!("Video: {video_quality} | Audio: {audio_label}"))
             .build();
         info_sizer.add(&quality_text, 0, SizerFlag::Expand | SizerFlag::Top, 4);
-        info_sizer.add(
-            &StaticText::builder(&queue_item)
-                .with_label("Status: waiting")
-                .build(),
-            0,
-            SizerFlag::Expand | SizerFlag::Top,
-            4,
-        );
-        let item_progress = Gauge::builder(&queue_item).with_range(100).build();
+        let status_text = StaticText::builder(&queue_item)
+            .with_label("Status: waiting")
+            .build();
+        info_sizer.add(&status_text, 0, SizerFlag::Expand | SizerFlag::Top, 4);
+        let item_progress = Gauge::builder(&queue_item)
+            .with_style(GaugeStyle::Default)
+            .with_size(Size::new(-1, 18))
+            .with_range(100)
+            .build();
         item_progress.set_value(0);
         info_sizer.add(&item_progress, 0, SizerFlag::Expand | SizerFlag::Top, 4);
         queue_item_sizer.add_sizer(
@@ -203,6 +213,8 @@ impl FrameUI {
             panel: queue_item,
             title_text,
             quality_text,
+            status_text,
+            progress_gauge: item_progress,
             cover_bitmap,
             up_button,
             down_button,
@@ -420,6 +432,11 @@ fn setup_menu_bar(frame: &Frame) {
             project::ID_CHANGE_TITLE,
             "Change project title",
             "Change the title of the current project",
+        )
+        .append_item(
+            project::ID_RESET_QUEUE_STATUS,
+            "Reset all queue status",
+            "Reset render status for every queue",
         )
         .build();
 

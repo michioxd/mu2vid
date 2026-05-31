@@ -1,6 +1,6 @@
 use crate::ui::new_queue::{
     DEFAULT_AUDIO_BITRATE_KBPS, DEFAULT_AUDIO_CODEC, ORIGINAL_AUDIO_CODEC, QueueItemDraft,
-    clamp_audio_bitrate,
+    QueueRenderStatus, clamp_audio_bitrate,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -27,6 +27,8 @@ pub struct ProjectAlbum {
     pub audio_codec: String,
     #[serde(default = "default_audio_bitrate_kbps")]
     pub audio_bitrate_kbps: u32,
+    #[serde(default = "default_render_status")]
+    pub render_status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_quality: Option<String>,
 }
@@ -52,6 +54,7 @@ impl From<&QueueItemDraft> for ProjectAlbum {
             video_quality: item.video_quality.clone(),
             audio_codec: item.audio_codec.clone(),
             audio_bitrate_kbps: item.audio_bitrate_kbps,
+            render_status: item.render_status.as_str().to_string(),
             audio_quality: None,
         }
     }
@@ -68,6 +71,7 @@ impl From<ProjectAlbum> for QueueItemDraft {
             video_quality: album.video_quality,
             audio_codec,
             audio_bitrate_kbps,
+            render_status: QueueRenderStatus::from(album.render_status.as_str()),
         }
     }
 }
@@ -78,6 +82,10 @@ fn default_audio_codec() -> String {
 
 fn default_audio_bitrate_kbps() -> u32 {
     DEFAULT_AUDIO_BITRATE_KBPS
+}
+
+fn default_render_status() -> String {
+    QueueRenderStatus::Waiting.as_str().to_string()
 }
 
 fn normalized_audio_settings(album: &ProjectAlbum) -> (String, u32) {

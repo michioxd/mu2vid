@@ -6,6 +6,7 @@ pub mod main_window;
 mod main_window_ui;
 pub mod new_queue;
 mod new_queue_ui;
+mod render;
 mod setting;
 mod setting_ui;
-mod utils;
+pub(crate) mod utils;

@@ -7,11 +7,16 @@ use crate::ui::main_window_ui::{
     MAX_RECENT_PROJECT_MENU_ITEMS, QueueItemUI, prompt_project_title,
 };
 use crate::ui::new_queue;
+use crate::ui::render::{start_render_thread, update_start_stop_buttons};
 use crate::ui::setting;
 use crate::{config, deps::ffmpeg, project};
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 // use wxdragon::event::EventType;
 use wxdragon::geometry::{Point, Rect, Size};
 use wxdragon::id::{ID_ABOUT, ID_CANCEL, ID_EXIT, ID_OK, ID_YES};
@@ -281,7 +286,8 @@ fn setup_main_controls(frame_ui: &FrameUI) {
     let queue_items = Rc::new(RefCell::new(Vec::<new_queue::QueueItemDraft>::new()));
     let queue_item_uis = Rc::new(RefCell::new(Vec::<QueueItemUI>::new()));
     let project_state = ProjectState::new();
-    let is_started = Rc::new(RefCell::new(false));
+    let is_started = Arc::new(AtomicBool::new(false));
+    let cancel_render = Arc::new(Mutex::new(None::<Arc<AtomicBool>>));
 
     update_project_title_bar(frame_ui, &project_state);
     load_last_project(
@@ -291,7 +297,7 @@ fn setup_main_controls(frame_ui: &FrameUI) {
         &project_state,
         status_bar,
     );
-    update_start_stop_buttons(frame_ui, *is_started.borrow());
+    update_start_stop_buttons(frame_ui, is_started.load(Ordering::Relaxed));
 
     setup_help_menu(
         frame_ui,
@@ -311,14 +317,17 @@ fn setup_main_controls(frame_ui: &FrameUI) {
         Rc::clone(&queue_items),
         Rc::clone(&queue_item_uis),
         project_state.clone(),
+        Arc::clone(&is_started),
         status_bar,
     );
 
     let project_state_for_add = project_state.clone();
+    let queue_items_for_add_button = Rc::clone(&queue_items);
+    let queue_item_uis_for_add_button = Rc::clone(&queue_item_uis);
     frame_ui.add_queue_button.on_click(move |_| {
         let frame_ui = frame_ui_for_queue.clone();
-        let queue_items = Rc::clone(&queue_items);
-        let queue_item_uis = Rc::clone(&queue_item_uis);
+        let queue_items = Rc::clone(&queue_items_for_add_button);
+        let queue_item_uis = Rc::clone(&queue_item_uis_for_add_button);
         let project_state = project_state_for_add.clone();
         let on_add = Rc::new(move |item: new_queue::QueueItemDraft| {
             let item_index = queue_items.borrow().len();
@@ -328,6 +337,10 @@ fn setup_main_controls(frame_ui: &FrameUI) {
                 &item.video_quality,
                 &item.audio_display_label(),
             );
+            queue_item_ui.status_text.set_label(item.status_label());
+            queue_item_ui
+                .progress_gauge
+                .set_value(item.progress_value());
             setup_queue_item_edit(
                 &frame_ui,
                 queue_item_ui,
@@ -350,16 +363,46 @@ fn setup_main_controls(frame_ui: &FrameUI) {
     });
 
     let frame_ui_for_start = frame_ui.clone();
-    let is_started_for_start = Rc::clone(&is_started);
+    let is_started_for_start = Arc::clone(&is_started);
+    let queue_items_for_start = Rc::clone(&queue_items);
+    let queue_item_uis_for_start = Rc::clone(&queue_item_uis);
+    let cancel_render_for_start = Arc::clone(&cancel_render);
     frame_ui.start_button.on_click(move |_| {
-        *is_started_for_start.borrow_mut() = true;
+        if queue_items_for_start.borrow().is_empty() {
+            frame_ui_for_start
+                .main_status
+                .set_status_text("Add at least one queue before rendering", 0);
+            return;
+        }
+
+        is_started_for_start.store(true, Ordering::Relaxed);
         update_start_stop_buttons(&frame_ui_for_start, true);
+        start_render_thread(
+            &frame_ui_for_start,
+            Rc::clone(&queue_items_for_start),
+            Rc::clone(&queue_item_uis_for_start),
+            Arc::clone(&is_started_for_start),
+            Arc::clone(&cancel_render_for_start),
+        );
     });
 
     let frame_ui_for_stop = frame_ui.clone();
-    let is_started_for_stop = Rc::clone(&is_started);
+    let is_started_for_stop = Arc::clone(&is_started);
+    let cancel_render_for_stop = Arc::clone(&cancel_render);
     frame_ui.stop_button.on_click(move |_| {
-        *is_started_for_stop.borrow_mut() = false;
+        if let Some(cancel) = cancel_render_for_stop
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+        {
+            cancel.store(true, Ordering::Relaxed);
+            frame_ui_for_stop
+                .main_status
+                .set_status_text("Stopping render...", 0);
+            return;
+        }
+
+        is_started_for_stop.store(false, Ordering::Relaxed);
         update_start_stop_buttons(&frame_ui_for_stop, false);
     });
 
@@ -367,36 +410,26 @@ fn setup_main_controls(frame_ui: &FrameUI) {
     let work_dir_text = frame_ui.work_dir_text;
     let frame_ui_for_work_dir = frame_ui.clone();
     let project_state_for_work_dir = project_state.clone();
-    let is_started_for_work_dir = Rc::clone(&is_started);
+    let is_started_for_work_dir = Arc::clone(&is_started);
     frame_ui.work_dir_browse_button.on_click(move |_| {
         if let Some(folder) = choose_work_dir(&main_frame, &work_dir_text.get_value()) {
             work_dir_text.set_value(&folder);
-            update_start_stop_buttons(&frame_ui_for_work_dir, *is_started_for_work_dir.borrow());
+            update_start_stop_buttons(
+                &frame_ui_for_work_dir,
+                is_started_for_work_dir.load(Ordering::Relaxed),
+            );
             mark_project_dirty(&frame_ui_for_work_dir, &project_state_for_work_dir);
         }
     });
 
     let frame_ui_for_work_dir_text = frame_ui.clone();
-    let is_started_for_work_dir_text = Rc::clone(&is_started);
+    let is_started_for_work_dir_text = Arc::clone(&is_started);
     frame_ui.work_dir_text.on_text_updated(move |_| {
         update_start_stop_buttons(
             &frame_ui_for_work_dir_text,
-            *is_started_for_work_dir_text.borrow(),
+            is_started_for_work_dir_text.load(Ordering::Relaxed),
         );
     });
-}
-
-fn update_start_stop_buttons(frame_ui: &FrameUI, is_started: bool) {
-    frame_ui
-        .start_button
-        .enable(!is_started && is_valid_work_dir(&frame_ui.work_dir_text.get_value()));
-    frame_ui.stop_button.enable(is_started);
-}
-
-fn is_valid_work_dir(path: &str) -> bool {
-    let path = path.trim();
-
-    !path.is_empty() && Path::new(path).is_dir()
 }
 
 fn setup_project_menu(
@@ -404,6 +437,7 @@ fn setup_project_menu(
     queue_items: Rc<RefCell<Vec<new_queue::QueueItemDraft>>>,
     queue_item_uis: Rc<RefCell<Vec<QueueItemUI>>>,
     project_state: ProjectState,
+    is_started: Arc<AtomicBool>,
     status_bar: StatusBar,
 ) {
     let frame_ui = frame_ui.clone();
@@ -439,6 +473,15 @@ fn setup_project_menu(
             setting::show(&frame_ui.main_frame, status_bar);
         } else if id == project::ID_CHANGE_TITLE {
             change_project_title(&frame_ui, &project_state);
+        } else if id == project::ID_RESET_QUEUE_STATUS {
+            if is_started.load(Ordering::Relaxed) {
+                frame_ui
+                    .main_status
+                    .set_status_text("Cannot reset queue status while rendering", 0);
+                return;
+            }
+
+            reset_all_queue_status(&frame_ui, &queue_items, &queue_item_uis, &project_state);
         } else if is_recent_project_id(id) {
             let index = (id - ID_FILE_RECENT_PROJECT_START) as usize;
             let config = config::load();
@@ -630,6 +673,10 @@ fn add_queue_item_from_project(
         &item.video_quality,
         &item.audio_display_label(),
     );
+    queue_item_ui.status_text.set_label(item.status_label());
+    queue_item_ui
+        .progress_gauge
+        .set_value(item.progress_value());
     setup_queue_item_edit(
         frame_ui,
         queue_item_ui,
@@ -733,6 +780,28 @@ fn change_project_title(frame_ui: &FrameUI, project_state: &ProjectState) {
     }
 
     project_state.set_title(title);
+    mark_project_dirty(frame_ui, project_state);
+}
+
+fn reset_all_queue_status(
+    frame_ui: &FrameUI,
+    queue_items: &Rc<RefCell<Vec<new_queue::QueueItemDraft>>>,
+    queue_item_uis: &Rc<RefCell<Vec<QueueItemUI>>>,
+    project_state: &ProjectState,
+) {
+    for item in queue_items.borrow_mut().iter_mut() {
+        item.render_status = new_queue::QueueRenderStatus::Waiting;
+    }
+
+    for item_ui in queue_item_uis.borrow().iter() {
+        item_ui.status_text.set_label("Status: waiting");
+        item_ui.progress_gauge.set_value(0);
+    }
+
+    frame_ui.total_progress_gauge.set_value(0);
+    frame_ui
+        .main_status
+        .set_status_text("Reset all queue status", 0);
     mark_project_dirty(frame_ui, project_state);
 }
 
@@ -1008,6 +1077,12 @@ fn setup_queue_item_edit(
                 updated_item.video_quality,
                 updated_item.audio_display_label()
             ));
+            queue_item_ui
+                .status_text
+                .set_label(updated_item.status_label());
+            queue_item_ui
+                .progress_gauge
+                .set_value(updated_item.progress_value());
             frame_ui.update_queue_item_artwork(
                 queue_item_ui.cover_bitmap,
                 &updated_item.artwork_path.to_string_lossy(),
@@ -1087,11 +1162,7 @@ fn setup_status_bar(frame_ui: &FrameUI) {
     frame_ui.main_status.set_fields_count(2);
     frame_ui.main_status.set_status_widths(&[-1, 240]);
     frame_ui.main_status.set_status_text("Ready", 0);
-
-    let progress_gauge = Gauge::builder(&frame_ui.main_status)
-        .with_size(Size::new(220, 16))
-        .with_range(100)
-        .build();
+    let progress_gauge = frame_ui.total_progress_gauge;
     progress_gauge.set_value(0);
     position_status_progress(&frame_ui.main_status, &progress_gauge);
 
