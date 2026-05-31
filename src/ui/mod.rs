@@ -6,4 +6,6 @@ pub mod main_window;
 mod main_window_ui;
 pub mod new_queue;
 mod new_queue_ui;
+mod setting;
+mod setting_ui;
 mod utils;

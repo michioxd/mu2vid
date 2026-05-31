@@ -3,17 +3,16 @@ use crate::ui::app_state::{DEFAULT_PROJECT_TITLE, ProjectState};
 use crate::ui::code_preview;
 use crate::ui::main_window_ui::{
     FrameUI, ID_FILE_NEW_PROJECT, ID_FILE_OPEN, ID_FILE_PREVIEW_PROJECT,
-    ID_FILE_RECENT_PROJECT_START, ID_FILE_SAVE, ID_FILE_SAVE_AS, MAX_RECENT_PROJECT_MENU_ITEMS,
-    QueueItemUI, prompt_project_title,
+    ID_FILE_RECENT_PROJECT_START, ID_FILE_SAVE, ID_FILE_SAVE_AS, ID_FILE_SETTINGS,
+    MAX_RECENT_PROJECT_MENU_ITEMS, QueueItemUI, prompt_project_title,
 };
 use crate::ui::new_queue;
+use crate::ui::setting;
 use crate::{config, deps::ffmpeg, project};
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use wxdragon::appearance::{
-    AppAppearance, Appearance, AppearanceResult, get_app as get_appearance_app, is_system_dark_mode,
-};
+use wxdragon::appearance::is_system_dark_mode;
 // use wxdragon::event::EventType;
 use wxdragon::geometry::{Point, Rect, Size};
 use wxdragon::id::{ID_ABOUT, ID_CANCEL, ID_EXIT, ID_OK, ID_YES};
@@ -29,7 +28,7 @@ const MIN_SPLITTER_SASH_POSITION: i32 = 240;
 const ID_QUIT_WITHOUT_SAVE: i32 = project::ID_CHANGE_TITLE + 1;
 
 pub fn show() {
-    apply_system_appearance();
+    let dark_mode = setting::apply_configured_appearance();
 
     let frame_ui = FrameUI::new();
 
@@ -43,7 +42,7 @@ pub fn show() {
         .main_frame
         .set_min_size(Size::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT));
     frame_ui.main_frame.layout();
-    frame_ui.apply_colors(is_system_dark_mode());
+    frame_ui.apply_colors(dark_mode || is_system_dark_mode());
     setup_status_bar(&frame_ui);
     setup_main_controls(&frame_ui);
     // setup_system_theme_watcher(&frame_ui);
@@ -51,19 +50,6 @@ pub fn show() {
     check_ffmpeg_async();
 
     log::info!("Window loaded successfully!");
-}
-
-fn apply_system_appearance() {
-    let Some(app) = get_appearance_app() else {
-        return;
-    };
-
-    match app.set_appearance(Appearance::System) {
-        AppearanceResult::Ok | AppearanceResult::CannotChange => {}
-        AppearanceResult::Failure => {
-            log::warn!("System appearance is not supported on this platform")
-        }
-    }
 }
 
 // TODO: re-implement later when renderer supports dynamic theme changes
@@ -445,6 +431,8 @@ fn setup_project_menu(
         } else if id == ID_FILE_PREVIEW_PROJECT {
             let project_file = build_project_file(&frame_ui, &queue_items, &project_state);
             code_preview::show(&frame_ui.main_frame, project_file);
+        } else if id == ID_FILE_SETTINGS {
+            setting::show(&frame_ui.main_frame, status_bar);
         } else if id == project::ID_CHANGE_TITLE {
             change_project_title(&frame_ui, &project_state);
         } else if is_recent_project_id(id) {

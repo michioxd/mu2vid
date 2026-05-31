@@ -1,3 +1,4 @@
+use crate::config;
 use crate::media::artwork::make_square_cover_rgba;
 use crate::ui::new_queue_ui::NewQueueUI;
 use crate::ui::new_queue_ui::PREVIEW_SIZE;
@@ -119,9 +120,7 @@ fn setup_initial_values(
 ) {
     queue_ui.add_button.set_label(action_label);
 
-    let Some(item) = initial_item else {
-        return;
-    };
+    let item = initial_item.unwrap_or_else(default_queue_item);
 
     queue_ui.album_path_text.set_value(&item.album_path);
     queue_ui.title_text.set_value(&item.title);
@@ -135,6 +134,11 @@ fn setup_initial_values(
         queue_ui.audio_bitrate_slider,
         queue_ui.audio_bitrate_label,
     );
+
+    if item.artwork_path.as_os_str().is_empty() {
+        return;
+    }
+
     update_artwork_info(&queue_ui.artwork_info_text, &item.artwork_path);
     load_artwork_preview_async(
         queue_ui.artwork_preview_bitmap,
@@ -143,6 +147,19 @@ fn setup_initial_values(
         item.artwork_path,
         Arc::new(AtomicU64::new(0)),
     );
+}
+
+fn default_queue_item() -> QueueItemDraft {
+    let config = config::load();
+
+    QueueItemDraft {
+        album_path: String::new(),
+        artwork_path: PathBuf::new(),
+        title: String::new(),
+        video_quality: config.encoder.default_video_quality,
+        audio_codec: config.encoder.default_audio_encoder,
+        audio_bitrate_kbps: config.encoder.default_audio_bitrate_kbps,
+    }
 }
 
 fn setup_events(

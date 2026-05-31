@@ -4,9 +4,28 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct AppConfig {
     pub ffmpeg_path: Option<String>,
+    pub appearance: AppearanceConfig,
+    pub encoder: EncoderConfig,
     pub window: WindowConfig,
     pub recent_projects: Vec<String>,
     pub last_project_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppearanceConfig {
+    System,
+    Dark,
+    Light,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EncoderConfig {
+    pub video_encoder: Option<String>,
+    pub default_video_quality: String,
+    pub default_audio_encoder: String,
+    pub default_audio_bitrate_kbps: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,9 +43,28 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             ffmpeg_path: None,
+            appearance: AppearanceConfig::default(),
+            encoder: EncoderConfig::default(),
             window: WindowConfig::default(),
             recent_projects: Vec::new(),
             last_project_path: None,
+        }
+    }
+}
+
+impl Default for AppearanceConfig {
+    fn default() -> Self {
+        Self::System
+    }
+}
+
+impl Default for EncoderConfig {
+    fn default() -> Self {
+        Self {
+            video_encoder: None,
+            default_video_quality: "1080p".to_string(),
+            default_audio_encoder: "aac".to_string(),
+            default_audio_bitrate_kbps: 320,
         }
     }
 }

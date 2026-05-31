@@ -36,7 +36,7 @@ impl CodePreviewUI {
         let panel = Panel::builder(&frame).build();
         let sizer = BoxSizer::builder(Orientation::Vertical).build();
         let code_text = TextCtrl::builder(&panel)
-            .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly)
+            .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly | TextCtrlStyle::Rich2)
             .build();
         configure_code_text(&code_text);
         sizer.add(&code_text, 1, SizerFlag::Expand | SizerFlag::All, BORDER);

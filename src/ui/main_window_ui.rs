@@ -12,6 +12,7 @@ pub const ID_FILE_OPEN: i32 = ID_HIGHEST + 2;
 pub const ID_FILE_SAVE: i32 = ID_HIGHEST + 3;
 pub const ID_FILE_SAVE_AS: i32 = ID_HIGHEST + 4;
 pub const ID_FILE_PREVIEW_PROJECT: i32 = ID_HIGHEST + 5;
+pub const ID_FILE_SETTINGS: i32 = ID_HIGHEST + 6;
 pub const ID_FILE_RECENT_PROJECT_START: i32 = ID_HIGHEST + 21;
 pub const MAX_RECENT_PROJECT_MENU_ITEMS: usize = 10;
 const WX_LEFT: ffi::wxd_Direction_t = 0x0010;
@@ -395,6 +396,8 @@ fn setup_menu_bar(frame: &Frame) {
         .append_item(ID_FILE_SAVE_AS, "Save as\tCtrl+Alt+S", "")
         .append_separator()
         .append_item(ID_FILE_PREVIEW_PROJECT, "Preview project file", "")
+        .append_separator()
+        .append_item(ID_FILE_SETTINGS, "Settings", "Configure mu2vid")
         .build();
     let _ = file_menu.append_submenu(recent_menu, "Recent Project", "");
     file_menu.append_separator();
@@ -402,6 +405,7 @@ fn setup_menu_bar(frame: &Frame) {
     set_menu_item_icon(&file_menu, ID_FILE_NEW_PROJECT, ArtId::New);
     set_menu_item_icon(&file_menu, ID_FILE_OPEN, ArtId::FileOpen);
     set_menu_item_icon(&file_menu, ID_FILE_PREVIEW_PROJECT, ArtId::ReportView);
+    set_menu_item_icon(&file_menu, ID_FILE_SETTINGS, ArtId::ListView);
     set_menu_item_icon(&file_menu, ID_FILE_SAVE, ArtId::FileSave);
     set_menu_item_icon(&file_menu, ID_FILE_SAVE_AS, ArtId::FileSaveAs);
     set_menu_item_icon(&file_menu, ID_EXIT, ArtId::Quit);
