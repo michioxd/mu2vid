@@ -1,6 +1,12 @@
 use crate::config;
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Check if FFmpeg is installed and has a supported version.
 ///
 /// Returns:
@@ -18,7 +24,9 @@ pub fn check_ffmpeg() -> i8 {
 pub fn check_ffmpeg_path(ffmpeg_path: &str) -> i8 {
     let ffmpeg_path = normalize_ffmpeg_path(ffmpeg_path);
 
-    let output = Command::new(ffmpeg_path).arg("-version").output();
+    let mut command = Command::new(ffmpeg_path);
+    hide_console_window(&mut command);
+    let output = command.arg("-version").output();
 
     match output {
         Ok(output) => {
@@ -39,9 +47,9 @@ pub fn check_ffmpeg_path(ffmpeg_path: &str) -> i8 {
 
 pub fn video_encoders(ffmpeg_path: &str) -> anyhow::Result<Vec<String>> {
     let ffmpeg_path = normalize_ffmpeg_path(ffmpeg_path);
-    let output = Command::new(ffmpeg_path)
-        .args(["-hide_banner", "-encoders"])
-        .output()?;
+    let mut command = Command::new(ffmpeg_path);
+    hide_console_window(&mut command);
+    let output = command.args(["-hide_banner", "-encoders"]).output()?;
 
     if !output.status.success() {
         anyhow::bail!("ffmpeg -encoders failed");
@@ -64,6 +72,13 @@ fn normalize_ffmpeg_path(ffmpeg_path: &str) -> &str {
         "ffmpeg"
     } else {
         ffmpeg_path
+    }
+}
+
+fn hide_console_window(command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
     }
 }
 

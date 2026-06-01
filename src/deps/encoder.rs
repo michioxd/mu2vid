@@ -16,6 +16,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Clone)]
 pub struct RenderRequest {
     pub work_dir: PathBuf,
@@ -189,7 +195,9 @@ fn render_queue(
     let concat_input = build_concat_input(&tracks);
 
     let output_path = queue_dir.join("output.mp4");
-    let mut ffmpeg = Command::new(ffmpeg_path())
+    let mut ffmpeg_command = Command::new(ffmpeg_path());
+    hide_console_window(&mut ffmpeg_command);
+    let mut ffmpeg = ffmpeg_command
         .args(ffmpeg_args(item, &output_path))
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -648,6 +656,13 @@ fn ffmpeg_path() -> String {
         .ffmpeg_path
         .filter(|path| !path.trim().is_empty())
         .unwrap_or_else(|| "ffmpeg".to_string())
+}
+
+fn hide_console_window(command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 }
 
 fn video_encoder() -> String {

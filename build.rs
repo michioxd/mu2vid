@@ -7,7 +7,7 @@ fn main() {
 
     if target.contains("windows") {
         // Create a comprehensive manifest for Windows theming and modern features
-        let manifest = new_manifest("YourApp.Name")
+        let manifest = new_manifest("mu2vid")
             // Enable modern Windows Common Controls (v6) for theming
             .supported_os(Windows7..=Windows10)
             // Set UTF-8 as active code page for better Unicode support
