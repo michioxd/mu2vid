@@ -6,7 +6,7 @@ use wxdragon::sizers::StaticBoxSizerBuilder;
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 655;
 const MIN_WINDOW_WIDTH: i32 = 520;
-const MIN_WINDOW_HEIGHT: i32 = 640;
+const MIN_WINDOW_HEIGHT: i32 = 420;
 const FIELD_HEIGHT: i32 = 26;
 const BORDER: i32 = 12;
 const GAP: i32 = 8;
@@ -29,6 +29,7 @@ pub struct SettingUI {
     pub youtube_client_id_text: TextCtrl,
     pub youtube_client_secret_text: TextCtrl,
     pub youtube_redirect_uri_text: TextCtrl,
+    pub youtube_visibility_choice: Choice,
     pub youtube_login_button: Button,
     pub ok_button: Button,
     pub cancel_button: Button,
@@ -40,18 +41,33 @@ impl SettingUI {
         let frame = Frame::builder()
             .with_title("Settings")
             .with_size(Size::new(WINDOW_WIDTH, WINDOW_HEIGHT))
-            .with_style(FrameStyle::Caption | FrameStyle::SystemMenu | FrameStyle::CloseBox)
+            .with_style(
+                FrameStyle::Caption
+                    | FrameStyle::SystemMenu
+                    | FrameStyle::CloseBox
+                    | FrameStyle::ResizeBorder
+                    | FrameStyle::MinimizeBox
+                    | FrameStyle::MaximizeBox,
+            )
             .build();
         frame.set_min_size(Size::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT));
 
         let panel = Panel::builder(&frame).build();
+        let panel_sizer = BoxSizer::builder(Orientation::Vertical).build();
+        let scroll_panel = ScrolledWindow::builder(&panel)
+            .with_style(ScrolledWindowStyle::VScroll)
+            .build();
+        scroll_panel.set_scroll_rate(5, 5);
         let root_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-        let appearance_sizer =
-            StaticBoxSizerBuilder::new_with_label(Orientation::Vertical, &panel, "Appearance")
-                .build();
+        let appearance_sizer = StaticBoxSizerBuilder::new_with_label(
+            Orientation::Vertical,
+            &scroll_panel,
+            "Appearance",
+        )
+        .build();
         let appearance_choices = ["System", "Dark", "Light"];
-        let appearance_radio = RadioBox::builder(&panel, &appearance_choices)
+        let appearance_radio = RadioBox::builder(&scroll_panel, &appearance_choices)
             .with_label("")
             .with_major_dimension(3)
             .with_style(RadioBoxStyle::SpecifyCols)
@@ -66,7 +82,7 @@ impl SettingUI {
             GAP,
         );
         appearance_sizer.add(
-            &StaticText::builder(&panel)
+            &StaticText::builder(&scroll_panel)
                 .with_label("Restart app to apply appearance changes.")
                 .build(),
             0,
@@ -81,9 +97,10 @@ impl SettingUI {
         );
 
         let encoder_sizer =
-            StaticBoxSizerBuilder::new_with_label(Orientation::Vertical, &panel, "Encoder").build();
+            StaticBoxSizerBuilder::new_with_label(Orientation::Vertical, &scroll_panel, "Encoder")
+                .build();
         encoder_sizer.add(
-            &StaticText::builder(&panel)
+            &StaticText::builder(&scroll_panel)
                 .with_label("FFmpeg path")
                 .build(),
             0,
@@ -91,14 +108,14 @@ impl SettingUI {
             GAP,
         );
         let ffmpeg_row = BoxSizer::builder(Orientation::Horizontal).build();
-        let ffmpeg_path_text = TextCtrl::builder(&panel)
+        let ffmpeg_path_text = TextCtrl::builder(&scroll_panel)
             .with_size(Size::new(-1, FIELD_HEIGHT))
             .build();
-        let ffmpeg_browse_button = Button::builder(&panel)
+        let ffmpeg_browse_button = Button::builder(&scroll_panel)
             .with_label("Browse")
             .with_size(Size::new(92, FIELD_HEIGHT))
             .build();
-        let ffmpeg_validate_button = Button::builder(&panel)
+        let ffmpeg_validate_button = Button::builder(&scroll_panel)
             .with_label("Validate")
             .with_size(Size::new(92, FIELD_HEIGHT))
             .build();
@@ -121,7 +138,7 @@ impl SettingUI {
             SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
             GAP,
         );
-        let ffmpeg_status_text = StaticText::builder(&panel)
+        let ffmpeg_status_text = StaticText::builder(&scroll_panel)
             .with_label("Click Validate to check FFmpeg status and get available encoders.")
             .build();
         encoder_sizer.add(
@@ -134,26 +151,26 @@ impl SettingUI {
         let quality_row = BoxSizer::builder(Orientation::Horizontal).build();
         let video_encoder_sizer = BoxSizer::builder(Orientation::Vertical).build();
         video_encoder_sizer.add(
-            &StaticText::builder(&panel)
+            &StaticText::builder(&scroll_panel)
                 .with_label("Video encoder")
                 .build(),
             0,
             SizerFlag::Expand | SizerFlag::Bottom,
             4,
         );
-        let video_encoder_choice = Choice::builder(&panel).build();
+        let video_encoder_choice = Choice::builder(&scroll_panel).build();
         video_encoder_sizer.add(&video_encoder_choice, 0, SizerFlag::Expand, 0);
 
         let video_quality_sizer = BoxSizer::builder(Orientation::Vertical).build();
         video_quality_sizer.add(
-            &StaticText::builder(&panel)
+            &StaticText::builder(&scroll_panel)
                 .with_label("Default video quality")
                 .build(),
             0,
             SizerFlag::Expand | SizerFlag::Bottom,
             4,
         );
-        let video_quality_choice = Choice::builder(&panel)
+        let video_quality_choice = Choice::builder(&scroll_panel)
             .with_choices(video_quality_choices())
             .with_selection(Some(5))
             .build();
@@ -176,24 +193,24 @@ impl SettingUI {
         let audio_row = BoxSizer::builder(Orientation::Horizontal).build();
         let audio_encoder_sizer = BoxSizer::builder(Orientation::Vertical).build();
         audio_encoder_sizer.add(
-            &StaticText::builder(&panel)
+            &StaticText::builder(&scroll_panel)
                 .with_label("Default audio encoder")
                 .build(),
             0,
             SizerFlag::Expand | SizerFlag::Bottom,
             4,
         );
-        let audio_encoder_choice = Choice::builder(&panel)
+        let audio_encoder_choice = Choice::builder(&scroll_panel)
             .with_choices(audio_encoder_choices())
             .with_selection(Some(1))
             .build();
         audio_encoder_sizer.add(&audio_encoder_choice, 0, SizerFlag::Expand, 0);
 
         let audio_bitrate_sizer = BoxSizer::builder(Orientation::Vertical).build();
-        let audio_bitrate_label = StaticText::builder(&panel)
+        let audio_bitrate_label = StaticText::builder(&scroll_panel)
             .with_label("Default audio bitrate: 320kbps")
             .build();
-        let audio_bitrate_slider = Slider::builder(&panel)
+        let audio_bitrate_slider = Slider::builder(&scroll_panel)
             .with_min_value(64)
             .with_max_value(512)
             .with_value(320)
@@ -233,11 +250,34 @@ impl SettingUI {
         );
 
         let youtube_sizer =
-            StaticBoxSizerBuilder::new_with_label(Orientation::Vertical, &panel, "YouTube").build();
-        let youtube_client_id_text = add_labeled_text(&panel, &youtube_sizer, "Client ID");
-        let youtube_client_secret_text = add_labeled_text(&panel, &youtube_sizer, "Client secret");
-        let youtube_redirect_uri_text = add_labeled_text(&panel, &youtube_sizer, "Redirect URI");
-        let youtube_login_button = Button::builder(&panel).with_label("Login YouTube").build();
+            StaticBoxSizerBuilder::new_with_label(Orientation::Vertical, &scroll_panel, "YouTube")
+                .build();
+        let youtube_client_id_text = add_labeled_text(&scroll_panel, &youtube_sizer, "Client ID");
+        let youtube_client_secret_text =
+            add_labeled_text(&scroll_panel, &youtube_sizer, "Client secret");
+        let youtube_redirect_uri_text =
+            add_labeled_text(&scroll_panel, &youtube_sizer, "Redirect URI");
+        youtube_sizer.add(
+            &StaticText::builder(&scroll_panel)
+                .with_label("Upload visibility")
+                .build(),
+            0,
+            SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+            GAP,
+        );
+        let youtube_visibility_choice = Choice::builder(&scroll_panel)
+            .with_choices(youtube_visibility_choices())
+            .with_selection(Some(0))
+            .build();
+        youtube_sizer.add(
+            &youtube_visibility_choice,
+            0,
+            SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+            GAP,
+        );
+        let youtube_login_button = Button::builder(&scroll_panel)
+            .with_label("Login YouTube")
+            .build();
         youtube_sizer.add(
             &youtube_login_button,
             0,
@@ -251,8 +291,11 @@ impl SettingUI {
             BORDER,
         );
 
+        scroll_panel.set_sizer(root_sizer, true);
+        panel_sizer.add(&scroll_panel, 1, SizerFlag::Expand, 0);
+
         let line = StaticLine::builder(&panel).build();
-        root_sizer.add(
+        panel_sizer.add(
             &line,
             0,
             SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
@@ -277,14 +320,14 @@ impl SettingUI {
         buttons_sizer.add(&ok_button, 0, SizerFlag::Right, GAP);
         buttons_sizer.add(&cancel_button, 0, SizerFlag::Right, GAP);
         buttons_sizer.add(&apply_button, 0, SizerFlag::AlignCenterVertical, 0);
-        root_sizer.add_sizer(
+        panel_sizer.add_sizer(
             &buttons_sizer,
             0,
             SizerFlag::Expand | SizerFlag::All,
             BORDER,
         );
 
-        panel.set_sizer(root_sizer, true);
+        panel.set_sizer(panel_sizer, true);
         frame.layout();
         frame.center_on_screen();
 
@@ -303,6 +346,7 @@ impl SettingUI {
             youtube_client_id_text,
             youtube_client_secret_text,
             youtube_redirect_uri_text,
+            youtube_visibility_choice,
             youtube_login_button,
             ok_button,
             cancel_button,
@@ -311,7 +355,7 @@ impl SettingUI {
     }
 }
 
-fn add_labeled_text(parent: &Panel, sizer: &StaticBoxSizer, label: &str) -> TextCtrl {
+fn add_labeled_text(parent: &impl WxWidget, sizer: &StaticBoxSizer, label: &str) -> TextCtrl {
     sizer.add(
         &StaticText::builder(parent).with_label(label).build(),
         0,
@@ -341,6 +385,13 @@ fn video_quality_choices() -> Vec<String> {
 
 fn audio_encoder_choices() -> Vec<String> {
     ["opus", "aac", "original"]
+        .iter()
+        .map(|value| value.to_string())
+        .collect()
+}
+
+fn youtube_visibility_choices() -> Vec<String> {
+    ["public", "private"]
         .iter()
         .map(|value| value.to_string())
         .collect()

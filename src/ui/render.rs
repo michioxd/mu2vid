@@ -154,13 +154,23 @@ fn handle_render_event(
                 .main_status
                 .set_status_text(&format!("Total progress: {total_percent}%"), 0);
         }
-        encoder::RenderEvent::QueueFinished { index, output_path } => {
+        encoder::RenderEvent::QueueFinished {
+            index,
+            output_path,
+            will_upload,
+        } => {
             if let Some(item) = queue_items.borrow_mut().get_mut(index) {
                 item.render_status = new_queue::QueueRenderStatus::Finished;
             }
             if let Some(item_ui) = queue_item_uis.get(index) {
-                item_ui.status_text.set_label("Status: finished");
-                item_ui.progress_gauge.set_value(100);
+                if will_upload {
+                    item_ui
+                        .status_text
+                        .set_label("Status: rendered, uploading next");
+                } else {
+                    item_ui.status_text.set_label("Status: finished");
+                    item_ui.progress_gauge.set_value(100);
+                }
             }
             frame_ui
                 .main_status
@@ -169,7 +179,6 @@ fn handle_render_event(
         encoder::RenderEvent::UploadStarted { index, title } => {
             if let Some(item_ui) = queue_item_uis.get(index) {
                 item_ui.status_text.set_label("Status: uploading");
-                item_ui.progress_gauge.set_value(0);
             }
             frame_ui
                 .main_status
@@ -179,6 +188,9 @@ fn handle_render_event(
             index,
             uploaded,
             total,
+            queue_percent,
+            total_percent,
+            bytes_per_second,
         } => {
             let percent = if total == 0 {
                 0
@@ -186,19 +198,33 @@ fn handle_render_event(
                 ((uploaded.saturating_mul(100)) / total).min(100) as i32
             };
             if let Some(item_ui) = queue_item_uis.get(index) {
-                item_ui.progress_gauge.set_value(percent);
+                item_ui
+                    .progress_gauge
+                    .set_value(queue_percent.min(100) as i32);
                 item_ui
                     .status_text
                     .set_label(&format!("Status: uploading {percent}%"));
             }
             frame_ui
+                .total_progress_gauge
+                .set_value(total_percent.min(100) as i32);
+            let speed = bytes_per_second
+                .map(format_upload_speed)
+                .unwrap_or_else(|| "calculating".to_string());
+            frame_ui
                 .main_status
-                .set_status_text(&format!("YouTube upload progress: {percent}%"), 0);
+                .set_status_text(&format!("YouTube upload: {percent}% ({speed})"), 0);
         }
         encoder::RenderEvent::UploadFinished { index, video_id } => {
+            if let Some(item) = queue_items.borrow_mut().get_mut(index) {
+                item.skip_render = true;
+                item.render_status = new_queue::QueueRenderStatus::Finished;
+            }
             if let Some(item_ui) = queue_item_uis.get(index) {
-                item_ui.status_text.set_label("Status: uploaded");
+                item_ui.status_text.set_label("Status: uploaded, skipped");
                 item_ui.progress_gauge.set_value(100);
+                item_ui.skip_button.set_value(true);
+                item_ui.skip_button.set_label("Skipped");
             }
             let status = video_id
                 .map(|id| format!("Uploaded to YouTube: {id}"))
@@ -275,6 +301,19 @@ fn total_progress_from_status(queue_items: &[new_queue::QueueItemDraft]) -> i32 
         .filter(|item| item.render_status.is_finished())
         .count();
     ((finished * 100) / queue_items.len()) as i32
+}
+
+fn format_upload_speed(bytes_per_second: f64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+
+    if bytes_per_second >= MB {
+        format!("{:.1} MB/s", bytes_per_second / MB)
+    } else if bytes_per_second >= KB {
+        format!("{:.1} KB/s", bytes_per_second / KB)
+    } else {
+        format!("{bytes_per_second:.0} B/s")
+    }
 }
 
 fn set_queue_actions_enabled(frame_ui: &FrameUI, queue_item_uis: &[QueueItemUI]) {

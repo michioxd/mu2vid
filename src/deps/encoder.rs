@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct RenderRequest {
@@ -37,6 +37,7 @@ pub enum RenderEvent {
     QueueFinished {
         index: usize,
         output_path: PathBuf,
+        will_upload: bool,
     },
     UploadStarted {
         index: usize,
@@ -46,6 +47,9 @@ pub enum RenderEvent {
         index: usize,
         uploaded: u64,
         total: u64,
+        queue_percent: u32,
+        total_percent: u32,
+        bytes_per_second: Option<f64>,
     },
     UploadFinished {
         index: usize,
@@ -73,6 +77,8 @@ enum UploadMessage {
     Progress(u64, u64),
     Finished(Result<Option<String>>),
 }
+
+const RENDER_PROGRESS_WEIGHT: u32 = 50;
 
 pub fn render_project(
     request: RenderRequest,
@@ -110,11 +116,14 @@ fn render_project_inner(
             title: item.title.clone(),
         });
 
+        let will_upload = youtube_upload_enabled(&request, item);
+
         match render_queue(
             item,
             &request.work_dir,
             index,
             total_queues,
+            will_upload,
             &cancel,
             on_event,
         ) {
@@ -122,10 +131,12 @@ fn render_project_inner(
                 on_event(RenderEvent::QueueFinished {
                     index,
                     output_path: output_path.clone(),
+                    will_upload,
                 });
 
-                if !request.skip_youtube_upload
-                    && let Err(err) = upload_queue_video(item, &output_path, index, on_event)
+                if will_upload
+                    && let Err(err) =
+                        upload_queue_video(item, &output_path, index, total_queues, on_event)
                 {
                     on_event(RenderEvent::Error {
                         index: Some(index),
@@ -153,6 +164,7 @@ fn render_queue(
     work_dir: &Path,
     index: usize,
     total_queues: u32,
+    will_upload: bool,
     cancel: &AtomicBool,
     on_event: &mut impl FnMut(RenderEvent),
 ) -> Result<PathBuf> {
@@ -209,8 +221,9 @@ fn render_queue(
         }
 
         if let Some(seconds) = parse_ffmpeg_time_seconds(&line) {
-            let queue_percent = percent(seconds, total_duration);
-            let total_percent = (((index as u32) * 100) + queue_percent) / total_queues;
+            let render_percent = percent(seconds, total_duration);
+            let queue_percent = queue_render_percent(render_percent, will_upload);
+            let total_percent = queue_total_percent(index, queue_percent, total_queues);
             on_event(RenderEvent::Progress {
                 index,
                 queue_percent,
@@ -240,8 +253,12 @@ fn render_queue(
 
     on_event(RenderEvent::Progress {
         index,
-        queue_percent: 100,
-        total_percent: (((index as u32) + 1) * 100) / total_queues,
+        queue_percent: queue_render_percent(100, will_upload),
+        total_percent: queue_total_percent(
+            index,
+            queue_render_percent(100, will_upload),
+            total_queues,
+        ),
     });
     Ok(output_path)
 }
@@ -250,6 +267,7 @@ fn upload_queue_video(
     item: &QueueItemDraft,
     output_path: &Path,
     index: usize,
+    total_queues: u32,
     on_event: &mut impl FnMut(RenderEvent),
 ) -> Result<()> {
     let mut config = config::load();
@@ -269,6 +287,7 @@ fn upload_queue_video(
     let output_path = output_path.to_path_buf();
     let title = item.title.clone();
     let description = rendered_description(item, &output_path)?;
+    let privacy_status = youtube_privacy_status(&config.youtube.upload_visibility).to_string();
     let thumbnail_path = output_path
         .parent()
         .context("Missing rendered output folder")?
@@ -285,7 +304,7 @@ fn upload_queue_video(
                 &output_path,
                 &title,
                 &description,
-                "private",
+                &privacy_status,
                 move |uploaded, total| {
                     let _ = progress_tx.send(UploadMessage::Progress(uploaded, total));
                 },
@@ -303,13 +322,36 @@ fn upload_queue_video(
         let _ = tx.send(UploadMessage::Finished(result));
     });
 
+    let mut last_progress: Option<(u64, Instant)> = None;
     while let Ok(message) = rx.recv() {
         match message {
-            UploadMessage::Progress(uploaded, total) => on_event(RenderEvent::UploadProgress {
-                index,
-                uploaded,
-                total,
-            }),
+            UploadMessage::Progress(uploaded, total) => {
+                let now = Instant::now();
+                let bytes_per_second = last_progress.and_then(|(last_uploaded, last_time)| {
+                    let elapsed = now.duration_since(last_time).as_secs_f64();
+                    if elapsed > 0.0 && uploaded >= last_uploaded {
+                        Some((uploaded - last_uploaded) as f64 / elapsed)
+                    } else {
+                        None
+                    }
+                });
+                last_progress = Some((uploaded, now));
+
+                let upload_percent = if total == 0 {
+                    0
+                } else {
+                    ((uploaded.saturating_mul(100)) / total).min(100) as u32
+                };
+                let queue_percent = queue_upload_percent(upload_percent);
+                on_event(RenderEvent::UploadProgress {
+                    index,
+                    uploaded,
+                    total,
+                    queue_percent,
+                    total_percent: queue_total_percent(index, queue_percent, total_queues),
+                    bytes_per_second,
+                });
+            }
             UploadMessage::Finished(result) => {
                 let video_id = result?;
                 on_event(RenderEvent::UploadFinished { index, video_id });
@@ -319,6 +361,41 @@ fn upload_queue_video(
     }
 
     Ok(())
+}
+
+fn youtube_upload_enabled(request: &RenderRequest, item: &QueueItemDraft) -> bool {
+    if request.skip_youtube_upload || item.skip_render {
+        return false;
+    }
+
+    let config = config::load();
+    !config.youtube.client_id.trim().is_empty()
+        && !config.youtube.client_secret.trim().is_empty()
+        && config.youtube.refresh_token.is_some()
+}
+
+fn youtube_privacy_status(value: &str) -> &str {
+    if value.eq_ignore_ascii_case("private") {
+        "private"
+    } else {
+        "public"
+    }
+}
+
+fn queue_render_percent(render_percent: u32, will_upload: bool) -> u32 {
+    if will_upload {
+        render_percent.min(100) * RENDER_PROGRESS_WEIGHT / 100
+    } else {
+        render_percent.min(100)
+    }
+}
+
+fn queue_upload_percent(upload_percent: u32) -> u32 {
+    RENDER_PROGRESS_WEIGHT + (upload_percent.min(100) * (100 - RENDER_PROGRESS_WEIGHT) / 100)
+}
+
+fn queue_total_percent(index: usize, queue_percent: u32, total_queues: u32) -> u32 {
+    (((index as u32) * 100) + queue_percent.min(100)) / total_queues.max(1)
 }
 
 fn rendered_description(item: &QueueItemDraft, output_path: &Path) -> Result<String> {

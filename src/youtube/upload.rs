@@ -33,6 +33,7 @@ struct VideoSnippet<'a> {
 #[serde(rename_all = "camelCase")]
 struct VideoStatus<'a> {
     privacy_status: &'a str,
+    self_declared_made_for_kids: bool,
 }
 
 pub async fn upload_video_resumable(
@@ -104,7 +105,10 @@ async fn start_resumable_upload_session(
 ) -> Result<String> {
     let body = VideoInsertRequest {
         snippet: VideoSnippet { title, description },
-        status: VideoStatus { privacy_status },
+        status: VideoStatus {
+            privacy_status,
+            self_declared_made_for_kids: false,
+        },
     };
 
     let response = client

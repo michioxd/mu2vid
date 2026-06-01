@@ -105,6 +105,10 @@ fn setup_initial_values(setting_ui: &SettingUI, system_supported: bool) {
     setting_ui
         .youtube_redirect_uri_text
         .set_value(&config.youtube.redirect_uri);
+    set_choice_to_value(
+        &setting_ui.youtube_visibility_choice,
+        normalized_youtube_visibility(&config.youtube.upload_visibility),
+    );
 
     setting_ui.video_encoder_choice.append(
         config
@@ -202,6 +206,11 @@ fn setup_events(setting_ui: &SettingUI, status_bar: StatusBar) {
     );
     bind_dirty_text(
         setting_ui.youtube_redirect_uri_text,
+        setting_ui.apply_button,
+        Rc::clone(&dirty),
+    );
+    bind_dirty_choice(
+        setting_ui.youtube_visibility_choice,
         setting_ui.apply_button,
         Rc::clone(&dirty),
     );
@@ -407,13 +416,23 @@ fn apply_settings(setting_ui: &SettingUI, valid_ffmpeg: &Arc<AtomicBool>) -> boo
         .unwrap_or_else(|| ORIGINAL_AUDIO_CODEC.to_string());
     config.encoder.default_audio_bitrate_kbps =
         clamp_audio_bitrate(setting_ui.audio_bitrate_slider.get_value() as u32);
-    config.youtube.client_id = setting_ui.youtube_client_id_text.get_value().trim().to_string();
+    config.youtube.client_id = setting_ui
+        .youtube_client_id_text
+        .get_value()
+        .trim()
+        .to_string();
     config.youtube.client_secret = setting_ui
         .youtube_client_secret_text
         .get_value()
         .trim()
         .to_string();
-    config.youtube.redirect_uri = normalized_redirect_uri(&setting_ui.youtube_redirect_uri_text.get_value());
+    config.youtube.redirect_uri =
+        normalized_redirect_uri(&setting_ui.youtube_redirect_uri_text.get_value());
+    config.youtube.upload_visibility = setting_ui
+        .youtube_visibility_choice
+        .get_string_selection()
+        .map(|value| normalized_youtube_visibility(&value).to_string())
+        .unwrap_or_else(|| "public".to_string());
 
     match config::save(&config) {
         Ok(()) => true,
@@ -428,7 +447,11 @@ fn apply_settings(setting_ui: &SettingUI, valid_ffmpeg: &Arc<AtomicBool>) -> boo
 }
 
 fn login_youtube(setting_ui: &SettingUI, status_bar: StatusBar) {
-    let client_id = setting_ui.youtube_client_id_text.get_value().trim().to_string();
+    let client_id = setting_ui
+        .youtube_client_id_text
+        .get_value()
+        .trim()
+        .to_string();
     let client_secret = setting_ui
         .youtube_client_secret_text
         .get_value()
@@ -437,7 +460,10 @@ fn login_youtube(setting_ui: &SettingUI, status_bar: StatusBar) {
     let redirect_uri = normalized_redirect_uri(&setting_ui.youtube_redirect_uri_text.get_value());
 
     if client_id.is_empty() || client_secret.is_empty() {
-        show_settings_error(&setting_ui.frame, "Set YouTube Client ID and Client secret first.");
+        show_settings_error(
+            &setting_ui.frame,
+            "Set YouTube Client ID and Client secret first.",
+        );
         return;
     }
 
@@ -460,7 +486,10 @@ fn login_youtube(setting_ui: &SettingUI, status_bar: StatusBar) {
     let code = match oauth::parse_code_from_redirect_url(&redirect_url) {
         Ok(code) => code,
         Err(err) => {
-            show_settings_error(&setting_ui.frame, &format!("Invalid redirect URL.\n\n{err}"));
+            show_settings_error(
+                &setting_ui.frame,
+                &format!("Invalid redirect URL.\n\n{err}"),
+            );
             return;
         }
     };
@@ -514,6 +543,14 @@ fn normalized_redirect_uri(value: &str) -> String {
         "http://localhost".to_string()
     } else {
         value.to_string()
+    }
+}
+
+fn normalized_youtube_visibility(value: &str) -> &str {
+    if value.eq_ignore_ascii_case("private") {
+        "private"
+    } else {
+        "public"
     }
 }
 
