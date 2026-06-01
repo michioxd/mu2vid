@@ -42,6 +42,8 @@ cargo build --target=x86_64-pc-windows-gnu
 cargo run --target=x86_64-pc-windows-gnu
 ```
 
+Linux or macOS? Do the same thing but with the native GNU toolchain.
+
 ## License
 
 [GPL v3.0](LICENSE)
