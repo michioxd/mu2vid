@@ -3,14 +3,17 @@ use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::fs::File;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 const RESUMABLE_UPLOAD_ENDPOINT: &str =
     "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status";
 const THUMBNAIL_UPLOAD_ENDPOINT: &str =
     "https://www.googleapis.com/upload/youtube/v3/thumbnails/set";
-const UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
+const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
+const THUMBNAIL_UPLOAD_RETRIES: u32 = 3;
+const THUMBNAIL_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct UploadResponse {
@@ -79,20 +82,39 @@ pub async fn upload_thumbnail(
         .await
         .with_context(|| format!("Cannot read thumbnail: {}", thumbnail_path.display()))?;
     let url = format!("{THUMBNAIL_UPLOAD_ENDPOINT}?videoId={video_id}");
+    let client = reqwest::Client::new();
 
-    reqwest::Client::new()
-        .post(url)
-        .bearer_auth(access_token)
-        .header(CONTENT_TYPE, "image/jpeg")
-        .header(CONTENT_LENGTH, thumbnail.len() as u64)
-        .body(thumbnail)
-        .send()
-        .await
-        .context("Failed to upload YouTube thumbnail")?
-        .error_for_status()
-        .context("YouTube rejected thumbnail upload")?;
+    for attempt in 1..=THUMBNAIL_UPLOAD_RETRIES {
+        let response = client
+            .post(&url)
+            .bearer_auth(access_token)
+            .header(CONTENT_TYPE, "image/jpeg")
+            .header(CONTENT_LENGTH, thumbnail.len() as u64)
+            .body(thumbnail.clone())
+            .send()
+            .await
+            .context("Failed to upload YouTube thumbnail")?;
+
+        if response.status().is_success() {
+            return Ok(());
+        }
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if attempt == THUMBNAIL_UPLOAD_RETRIES || !is_retryable_thumbnail_status(status) {
+            anyhow::bail!("YouTube rejected thumbnail upload: {status} {body}");
+        }
+
+        tokio::time::sleep(THUMBNAIL_RETRY_DELAY).await;
+    }
 
     Ok(())
+}
+
+fn is_retryable_thumbnail_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::BAD_REQUEST
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || status.is_server_error()
 }
 
 async fn start_resumable_upload_session(
@@ -150,7 +172,13 @@ async fn upload_file(
         anyhow::bail!("Video file is empty: {}", video_path.display());
     }
 
+    progress_callback(0, file_size);
+
     loop {
+        file.seek(std::io::SeekFrom::Start(uploaded))
+            .await
+            .with_context(|| format!("Cannot seek video file: {}", video_path.display()))?;
+
         let remaining = file_size.saturating_sub(uploaded);
         let chunk_len = remaining.min(UPLOAD_CHUNK_SIZE as u64) as usize;
         let mut chunk = vec![0; chunk_len];

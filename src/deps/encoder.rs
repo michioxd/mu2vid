@@ -79,6 +79,7 @@ enum UploadMessage {
 }
 
 const RENDER_PROGRESS_WEIGHT: u32 = 50;
+const PROGRESS_IDLE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub fn render_project(
     request: RenderRequest,
@@ -203,9 +204,30 @@ fn render_queue(
     });
 
     let stderr = ffmpeg.stderr.take().context("Cannot read FFmpeg stderr")?;
-    let mut reader = std::io::BufReader::new(stderr);
-    let mut line = String::new();
+    let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(stderr);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if progress_tx.send(line.clone()).is_err() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    let _ = progress_tx.send(format!("FFmpeg progress read error: {err}"));
+                    break;
+                }
+            }
+        }
+    });
+
     let mut stderr_tail = VecDeque::new();
+    let started_at = Instant::now();
+    let mut last_queue_percent = 0;
 
     loop {
         if cancel.load(AtomicOrdering::Relaxed) {
@@ -214,23 +236,45 @@ fn render_queue(
             return Ok(output_path);
         }
 
-        line.clear();
-        let bytes = reader.read_line(&mut line)?;
-        if bytes == 0 {
-            break;
-        }
+        match progress_rx.recv_timeout(PROGRESS_IDLE_TIMEOUT) {
+            Ok(line) => {
+                if let Some(seconds) = parse_ffmpeg_time_seconds(&line) {
+                    let render_percent = percent(seconds, total_duration);
+                    let queue_percent = queue_render_percent(render_percent, will_upload);
+                    last_queue_percent = emit_progress(
+                        index,
+                        queue_percent,
+                        total_queues,
+                        on_event,
+                        last_queue_percent,
+                    );
+                } else {
+                    push_ffmpeg_log_line(&mut stderr_tail, &line);
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(status) = ffmpeg.try_wait().context("Cannot check FFmpeg status")? {
+                    if !status.success() {
+                        anyhow::bail!(format_ffmpeg_error(
+                            "FFmpeg failed",
+                            Some(status),
+                            &stderr_tail,
+                        ));
+                    }
+                    break;
+                }
 
-        if let Some(seconds) = parse_ffmpeg_time_seconds(&line) {
-            let render_percent = percent(seconds, total_duration);
-            let queue_percent = queue_render_percent(render_percent, will_upload);
-            let total_percent = queue_total_percent(index, queue_percent, total_queues);
-            on_event(RenderEvent::Progress {
-                index,
-                queue_percent,
-                total_percent,
-            });
-        } else {
-            push_ffmpeg_log_line(&mut stderr_tail, &line);
+                let elapsed_percent = percent(started_at.elapsed().as_secs_f64(), total_duration);
+                let queue_percent = queue_render_percent(elapsed_percent, will_upload);
+                last_queue_percent = emit_progress(
+                    index,
+                    queue_percent,
+                    total_queues,
+                    on_event,
+                    last_queue_percent,
+                );
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
 
@@ -251,16 +295,30 @@ fn render_queue(
         ));
     }
 
+    emit_progress(
+        index,
+        queue_render_percent(100, will_upload),
+        total_queues,
+        on_event,
+        last_queue_percent,
+    );
+    Ok(output_path)
+}
+
+fn emit_progress(
+    index: usize,
+    queue_percent: u32,
+    total_queues: u32,
+    on_event: &mut impl FnMut(RenderEvent),
+    last_queue_percent: u32,
+) -> u32 {
+    let queue_percent = queue_percent.max(last_queue_percent).min(100);
     on_event(RenderEvent::Progress {
         index,
-        queue_percent: queue_render_percent(100, will_upload),
-        total_percent: queue_total_percent(
-            index,
-            queue_render_percent(100, will_upload),
-            total_queues,
-        ),
+        queue_percent,
+        total_percent: queue_total_percent(index, queue_percent, total_queues),
     });
-    Ok(output_path)
+    queue_percent
 }
 
 fn upload_queue_video(
@@ -292,6 +350,9 @@ fn upload_queue_video(
         .parent()
         .context("Missing rendered output folder")?
         .join("thumbnail.jpg");
+    let total_size = fs::metadata(&output_path)
+        .with_context(|| format!("Cannot read video file metadata: {}", output_path.display()))?
+        .len();
 
     std::thread::spawn(move || {
         let result = (|| -> Result<Option<String>> {
@@ -320,6 +381,15 @@ fn upload_queue_video(
         })();
 
         let _ = tx.send(UploadMessage::Finished(result));
+    });
+
+    on_event(RenderEvent::UploadProgress {
+        index,
+        uploaded: 0,
+        total: total_size,
+        queue_percent: queue_upload_percent(0),
+        total_percent: queue_total_percent(index, queue_upload_percent(0), total_queues),
+        bytes_per_second: None,
     });
 
     let mut last_progress: Option<(u64, Instant)> = None;
@@ -354,6 +424,14 @@ fn upload_queue_video(
             }
             UploadMessage::Finished(result) => {
                 let video_id = result?;
+                on_event(RenderEvent::UploadProgress {
+                    index,
+                    uploaded: total_size,
+                    total: total_size,
+                    queue_percent: 100,
+                    total_percent: queue_total_percent(index, 100, total_queues),
+                    bytes_per_second: None,
+                });
                 on_event(RenderEvent::UploadFinished { index, video_id });
                 break;
             }
