@@ -1,6 +1,6 @@
 use crate::config;
 use crate::media::thumbnail;
-use crate::ui::new_queue::{ORIGINAL_AUDIO_CODEC, QueueItemDraft};
+use crate::ui::new_queue::{DEFAULT_AUDIO_CODEC, ORIGINAL_AUDIO_CODEC, QueueItemDraft};
 use crate::ui::utils::is_audio_file;
 use crate::youtube::{oauth, token, upload};
 use anyhow::{Context, Result};
@@ -9,7 +9,7 @@ use lofty::prelude::Accessor;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::fs;
-use std::io::{BufRead, Write};
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Arc;
@@ -192,24 +192,16 @@ fn render_queue(
 
     write_timestamps(&queue_dir.join("timestamps.txt"), &tracks)?;
     thumbnail::generate_thumbnail(&item.artwork_path, &queue_dir.join("thumbnail.jpg"))?;
-    let concat_input = build_concat_input(&tracks);
-
     let output_path = queue_dir.join("output.mp4");
     let mut ffmpeg_command = Command::new(ffmpeg_path());
     hide_console_window(&mut ffmpeg_command);
     let mut ffmpeg = ffmpeg_command
-        .args(ffmpeg_args(item, &output_path))
-        .stdin(Stdio::piped())
+        .args(ffmpeg_args(item, &output_path, &tracks))
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .context("Cannot start FFmpeg")?;
-
-    let stdin_result = ffmpeg.stdin.take().map(|mut stdin| {
-        stdin
-            .write_all(concat_input.as_bytes())
-            .context("Cannot write FFmpeg concat input")
-    });
 
     let stderr = ffmpeg.stderr.take().context("Cannot read FFmpeg stderr")?;
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
@@ -287,14 +279,6 @@ fn render_queue(
     }
 
     let status = ffmpeg.wait().context("Cannot wait for FFmpeg")?;
-    if let Some(Err(err)) = stdin_result {
-        anyhow::bail!(format_ffmpeg_error(
-            &format!("{err}"),
-            Some(status),
-            &stderr_tail,
-        ));
-    }
-
     if !status.success() {
         anyhow::bail!(format_ffmpeg_error(
             "FFmpeg failed",
@@ -589,17 +573,7 @@ fn write_timestamps(path: &Path, tracks: &[TrackInfo]) -> Result<()> {
     fs::write(path, lines.join("\n")).with_context(|| format!("Cannot write {}", path.display()))
 }
 
-fn build_concat_input(tracks: &[TrackInfo]) -> String {
-    let mut input = tracks
-        .iter()
-        .map(|track| format!("file '{}'", escape_concat_path(&track.path)))
-        .collect::<Vec<_>>()
-        .join("\n");
-    input.push('\n');
-    input
-}
-
-fn ffmpeg_args(item: &QueueItemDraft, output_path: &Path) -> Vec<String> {
+fn ffmpeg_args(item: &QueueItemDraft, output_path: &Path, tracks: &[TrackInfo]) -> Vec<String> {
     let size = parse_video_size(&item.video_quality);
     let mut args = vec![
         "-y".to_string(),
@@ -613,32 +587,57 @@ fn ffmpeg_args(item: &QueueItemDraft, output_path: &Path) -> Vec<String> {
         "1".to_string(),
         "-i".to_string(),
         item.artwork_path.to_string_lossy().to_string(),
-        "-protocol_whitelist".to_string(),
-        "file,pipe".to_string(),
-        "-f".to_string(),
-        "concat".to_string(),
-        "-safe".to_string(),
-        "0".to_string(),
-        "-i".to_string(),
-        "pipe:0".to_string(),
+    ];
+
+    for track in tracks {
+        args.extend(["-i".to_string(), track.path.to_string_lossy().to_string()]);
+    }
+
+    args.extend([
         "-vf".to_string(),
         format!(
             "scale={size}:{size}:force_original_aspect_ratio=decrease,pad={size}:{size}:(ow-iw)/2:(oh-ih)/2"
         ),
+    ]);
+
+    if tracks.len() > 1 {
+        args.extend([
+            "-filter_complex".to_string(),
+            audio_concat_filter(tracks.len()),
+            "-map".to_string(),
+            "0:v:0".to_string(),
+            "-map".to_string(),
+            "[aout]".to_string(),
+        ]);
+    } else {
+        args.extend([
+            "-map".to_string(),
+            "0:v:0".to_string(),
+            "-map".to_string(),
+            "1:a:0".to_string(),
+        ]);
+    }
+
+    args.extend([
         "-c:v".to_string(),
         video_encoder(),
         "-preset".to_string(),
         "medium".to_string(),
         "-pix_fmt".to_string(),
         "yuv420p".to_string(),
-    ];
+    ]);
 
-    if item.audio_codec == ORIGINAL_AUDIO_CODEC {
+    if item.audio_codec == ORIGINAL_AUDIO_CODEC && tracks.len() == 1 {
         args.extend(["-c:a".to_string(), "copy".to_string()]);
     } else {
+        let audio_codec = if item.audio_codec == ORIGINAL_AUDIO_CODEC {
+            DEFAULT_AUDIO_CODEC
+        } else {
+            &item.audio_codec
+        };
         args.extend([
             "-c:a".to_string(),
-            item.audio_codec.clone(),
+            audio_codec.to_string(),
             "-b:a".to_string(),
             format!("{}k", item.audio_bitrate_kbps),
         ]);
@@ -649,6 +648,14 @@ fn ffmpeg_args(item: &QueueItemDraft, output_path: &Path) -> Vec<String> {
         output_path.to_string_lossy().to_string(),
     ]);
     args
+}
+
+fn audio_concat_filter(track_count: usize) -> String {
+    let inputs = (1..=track_count)
+        .map(|index| format!("[{index}:a:0]"))
+        .collect::<Vec<_>>()
+        .join("");
+    format!("{inputs}concat=n={track_count}:v=0:a=1[aout]")
 }
 
 fn ffmpeg_path() -> String {
@@ -731,12 +738,6 @@ fn format_time(total_seconds: f64) -> String {
     } else {
         format!("{hours:02}:{minutes:02}:{seconds:02}")
     }
-}
-
-fn escape_concat_path(path: &Path) -> String {
-    path.to_string_lossy()
-        .replace('\\', "/")
-        .replace('\'', "'\\''")
 }
 
 fn safe_folder_name(value: &str) -> String {
